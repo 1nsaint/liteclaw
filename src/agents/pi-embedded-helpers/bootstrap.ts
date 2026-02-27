@@ -82,8 +82,9 @@ export function stripThoughtSignatures<T>(
   }) as T;
 }
 
-export const DEFAULT_BOOTSTRAP_MAX_CHARS = 20_000;
-export const DEFAULT_BOOTSTRAP_TOTAL_MAX_CHARS = 150_000;
+/** Liteclaw: lower defaults so injected project context uses fewer tokens. */
+export const DEFAULT_BOOTSTRAP_MAX_CHARS = 10_000;
+export const DEFAULT_BOOTSTRAP_TOTAL_MAX_CHARS = 60_000;
 const MIN_BOOTSTRAP_FILE_BUDGET_CHARS = 64;
 const BOOTSTRAP_HEAD_RATIO = 0.7;
 const BOOTSTRAP_TAIL_RATIO = 0.2;

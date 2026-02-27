@@ -2,8 +2,12 @@ import type { AgentMessage } from "@mariozechner/pi-agent-core";
 
 const CHARS_PER_TOKEN_ESTIMATE = 4;
 // Keep a conservative input budget to absorb tokenizer variance and provider framing overhead.
-const CONTEXT_INPUT_HEADROOM_RATIO = 0.75;
-const SINGLE_TOOL_RESULT_CONTEXT_SHARE = 0.5;
+// For smaller context windows we use a tighter headroom to leave more room for
+// the conversation and system prompt.
+const CONTEXT_INPUT_HEADROOM_RATIO_DEFAULT = 0.75;
+const CONTEXT_INPUT_HEADROOM_RATIO_SMALL_CTX = 0.5;
+const SINGLE_TOOL_RESULT_CONTEXT_SHARE_DEFAULT = 0.5;
+const SINGLE_TOOL_RESULT_CONTEXT_SHARE_SMALL_CTX = 0.3;
 const TOOL_RESULT_CHARS_PER_TOKEN_ESTIMATE = 2;
 const IMAGE_CHAR_ESTIMATE = 8_000;
 
@@ -299,14 +303,21 @@ export function installToolResultContextGuard(params: {
   contextWindowTokens: number;
 }): () => void {
   const contextWindowTokens = Math.max(1, Math.floor(params.contextWindowTokens));
+  const isSmallContextWindow = contextWindowTokens <= 65_536;
+  const contextHeadroomRatio = isSmallContextWindow
+    ? CONTEXT_INPUT_HEADROOM_RATIO_SMALL_CTX
+    : CONTEXT_INPUT_HEADROOM_RATIO_DEFAULT;
+  const singleToolShare = isSmallContextWindow
+    ? SINGLE_TOOL_RESULT_CONTEXT_SHARE_SMALL_CTX
+    : SINGLE_TOOL_RESULT_CONTEXT_SHARE_DEFAULT;
   const contextBudgetChars = Math.max(
     1_024,
-    Math.floor(contextWindowTokens * CHARS_PER_TOKEN_ESTIMATE * CONTEXT_INPUT_HEADROOM_RATIO),
+    Math.floor(contextWindowTokens * CHARS_PER_TOKEN_ESTIMATE * contextHeadroomRatio),
   );
   const maxSingleToolResultChars = Math.max(
     1_024,
     Math.floor(
-      contextWindowTokens * TOOL_RESULT_CHARS_PER_TOKEN_ESTIMATE * SINGLE_TOOL_RESULT_CONTEXT_SHARE,
+      contextWindowTokens * TOOL_RESULT_CHARS_PER_TOKEN_ESTIMATE * singleToolShare,
     ),
   );
 

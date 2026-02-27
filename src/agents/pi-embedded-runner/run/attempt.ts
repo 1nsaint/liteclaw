@@ -468,7 +468,18 @@ export async function runEmbeddedAttempt(
       },
     });
     const isDefaultAgent = sessionAgentId === defaultAgentId;
-    const promptMode = resolvePromptModeForSession(params.sessionKey);
+    let promptMode = resolvePromptModeForSession(params.sessionKey);
+    const configuredPromptMode =
+      params.config?.agents?.defaults?.promptMode as
+        | "full"
+        | "lite"
+        | "minimal"
+        | "none"
+        | undefined;
+    // Respect an explicit promptMode for main sessions, but always keep subagents on "minimal".
+    if (configuredPromptMode && promptMode === "full") {
+      promptMode = configuredPromptMode === "none" ? "full" : configuredPromptMode;
+    }
     const docsPath = await resolveOpenClawDocsPath({
       workspaceDir: effectiveWorkspace,
       argv1: process.argv[1],

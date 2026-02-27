@@ -78,8 +78,17 @@ export function buildEmbeddedExtensionFactories(params: {
       modelContextWindow: params.model?.contextWindow,
       defaultTokens: DEFAULT_CONTEXT_TOKENS,
     });
+    // For smaller context windows, use a lower default history share so that
+    // new turns have more room and long runs are less likely to overflow.
+    const isSmallContextWindow = contextWindowInfo.tokens <= 65_536;
+    const effectiveMaxHistoryShare =
+      typeof compactionCfg?.maxHistoryShare === "number"
+        ? compactionCfg.maxHistoryShare
+        : isSmallContextWindow
+          ? 0.35
+          : undefined;
     setCompactionSafeguardRuntime(params.sessionManager, {
-      maxHistoryShare: compactionCfg?.maxHistoryShare,
+      maxHistoryShare: effectiveMaxHistoryShare,
       contextWindowTokens: contextWindowInfo.tokens,
       model: params.model,
     });

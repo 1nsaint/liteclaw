@@ -290,20 +290,48 @@ export function convertToOllamaMessages(
 
 // ── Tool extraction ─────────────────────────────────────────────────────────
 
-function extractOllamaTools(tools: Tool[] | undefined): OllamaTool[] {
+const OLLAMA_TOOL_DESC_MAX_CHARS_SMALL_CTX = 80;
+const OLLAMA_SMALL_CONTEXT_WINDOW_THRESHOLD = 65_536;
+
+function shortenToolDescription(description: string, maxChars: number): string {
+  const trimmed = description.trim();
+  if (trimmed.length <= maxChars) {
+    return trimmed;
+  }
+  const firstSentenceEnd = trimmed.search(/[.!?]\s/);
+  if (firstSentenceEnd !== -1 && firstSentenceEnd + 1 <= maxChars) {
+    return trimmed.slice(0, firstSentenceEnd + 1).trim();
+  }
+  return trimmed.slice(0, Math.max(0, maxChars - 3)).trim() + "...";
+}
+
+function extractOllamaTools(
+  tools: Tool[] | undefined,
+  contextWindowTokens?: number,
+): OllamaTool[] {
   if (!tools || !Array.isArray(tools)) {
     return [];
   }
+  const shortenDescriptions =
+    typeof contextWindowTokens === "number" &&
+    contextWindowTokens <= OLLAMA_SMALL_CONTEXT_WINDOW_THRESHOLD;
   const result: OllamaTool[] = [];
   for (const tool of tools) {
     if (typeof tool.name !== "string" || !tool.name) {
       continue;
     }
+    let description = typeof tool.description === "string" ? tool.description : "";
+    if (shortenDescriptions && description) {
+      description = shortenToolDescription(
+        description,
+        OLLAMA_TOOL_DESC_MAX_CHARS_SMALL_CTX,
+      );
+    }
     result.push({
       type: "function",
       function: {
         name: tool.name,
-        description: typeof tool.description === "string" ? tool.description : "",
+        description,
         parameters: (tool.parameters ?? {}) as Record<string, unknown>,
       },
     });
@@ -424,11 +452,17 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
           context.systemPrompt,
         );
 
-        const ollamaTools = extractOllamaTools(context.tools);
+        const ollamaTools = extractOllamaTools(
+          context.tools,
+          model.contextWindow ?? undefined,
+        );
 
         // Ollama defaults to num_ctx=4096 which is too small for large
-        // system prompts + many tool definitions. Use model's contextWindow.
-        const ollamaOptions: Record<string, unknown> = { num_ctx: model.contextWindow ?? 65536 };
+        // system prompts + many tool definitions. Use model's contextWindow,
+        // but keep the fallback conservative for smaller-memory hosts.
+        const ollamaOptions: Record<string, unknown> = {
+          num_ctx: model.contextWindow ?? 32_768,
+        };
         if (typeof options?.temperature === "number") {
           ollamaOptions.temperature = options.temperature;
         }
