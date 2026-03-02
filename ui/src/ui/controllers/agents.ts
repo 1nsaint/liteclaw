@@ -8,6 +8,8 @@ export type AgentsState = {
   agentsError: string | null;
   agentsList: AgentsListResult | null;
   agentsSelectedId: string | null;
+  /** Model catalog from models.list (gateway-known models including Ollama). */
+  agentsCatalogModels: Array<{ provider: string; id: string; name?: string }>;
   toolsCatalogLoading: boolean;
   toolsCatalogError: string | null;
   toolsCatalogResult: ToolsCatalogResult | null;
@@ -32,6 +34,11 @@ export async function loadAgents(state: AgentsState) {
         state.agentsSelectedId = res.defaultId ?? res.agents[0]?.id ?? null;
       }
     }
+    const modelsRes = await state.client.request<{ models?: Array<{ provider: string; id: string; name?: string }> }>(
+      "models.list",
+      {},
+    );
+    state.agentsCatalogModels = Array.isArray(modelsRes?.models) ? modelsRes.models : [];
   } catch (err) {
     state.agentsError = String(err);
   } finally {

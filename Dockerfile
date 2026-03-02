@@ -58,7 +58,18 @@ ENV NODE_ENV=production
 # This reduces the attack surface by preventing container escape via root privileges
 USER node
 
-# Start gateway server with default config.
+# Seed config so gateway can bind to lan and serve Control UI from host (localhost)
+RUN mkdir -p /home/node/.openclaw
+COPY --chown=node:node scripts/docker-openclaw.seed.json /home/node/.openclaw/openclaw.json
+# Keep seed at a path not under the volume so entrypoint can copy it when volume is empty
+COPY --chown=node:node scripts/docker-openclaw.seed.json /app/docker-openclaw.seed.json
+
+COPY --chown=node:node scripts/docker-entrypoint.sh /app/docker-entrypoint.sh
+USER root
+RUN chmod +x /app/docker-entrypoint.sh
+USER node
+
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 # Binds to loopback (127.0.0.1) by default for security.
 #
 # For container platforms requiring external health checks:

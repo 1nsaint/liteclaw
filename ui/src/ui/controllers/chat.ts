@@ -107,6 +107,26 @@ function normalizeFinalAssistantMessage(message: unknown): Record<string, unknow
   });
 }
 
+/**
+ * Treat gateway canonical session key and UI shorthand as the same session.
+ * The gateway resolves "main" to "agent:main:main"; events are broadcast with
+ * the canonical key, so we must accept both or chat replies/errors never show.
+ */
+function isSameSessionKey(clientKey: string, payloadKey: string): boolean {
+  if (clientKey === payloadKey) {
+    return true;
+  }
+  const a = clientKey.trim().toLowerCase();
+  const b = payloadKey.trim().toLowerCase();
+  if (a === b) {
+    return true;
+  }
+  if ((a === "main" && b === "agent:main:main") || (a === "agent:main:main" && b === "main")) {
+    return true;
+  }
+  return false;
+}
+
 export async function sendChatMessage(
   state: ChatState,
   message: string,
@@ -221,7 +241,7 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
   if (!payload) {
     return null;
   }
-  if (payload.sessionKey !== state.sessionKey) {
+  if (!isSameSessionKey(state.sessionKey, payload.sessionKey)) {
     return null;
   }
 

@@ -180,8 +180,11 @@ interface OllamaChatResponse {
   created_at: string;
   message: {
     role: "assistant";
-    content: string;
+    content?: string | null;
+    /** Qwen 3 and some backends use this for reasoning. */
     reasoning?: string;
+    /** Official Ollama thinking models use this (see docs). */
+    thinking?: string;
     tool_calls?: OllamaToolCall[];
   };
   done: boolean;
@@ -348,9 +351,13 @@ export function buildAssistantMessage(
   const content: (TextContent | ToolCall)[] = [];
 
   // Qwen 3 (and potentially other reasoning models) may return their final
-  // answer in a `reasoning` field with an empty `content`. Fall back to
-  // `reasoning` so the response isn't silently dropped.
-  const text = response.message.content || response.message.reasoning || "";
+  // answer in `reasoning` or `thinking` with an empty `content`. Fall back so
+  // the response isn't silently dropped.
+  const text =
+    (response.message.content ?? "") ||
+    (response.message.reasoning ?? "") ||
+    (response.message.thinking ?? "") ||
+    "";
   if (text) {
     content.push({ type: "text", text });
   }
@@ -441,6 +448,7 @@ function resolveOllamaChatUrl(baseUrl: string): string {
 
 export function createOllamaStreamFn(baseUrl: string): StreamFn {
   const chatUrl = resolveOllamaChatUrl(baseUrl);
+  log.info(`Ollama stream: baseUrl=${baseUrl} chatUrl=${chatUrl}`);
 
   return (model, context, options) => {
     const stream = createAssistantMessageEventStream();
@@ -477,6 +485,7 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
           ...(ollamaTools.length > 0 ? { tools: ollamaTools } : {}),
           options: ollamaOptions,
         };
+        log.info(`Ollama request: model=${model.id} messages=${ollamaMessages.length}`);
 
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
@@ -495,6 +504,7 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
 
         if (!response.ok) {
           const errorText = await response.text().catch(() => "unknown error");
+          log.warn(`Ollama API error: url=${chatUrl} status=${response.status} body=${errorText.slice(0, 200)}`);
           throw new Error(`Ollama API error ${response.status}: ${errorText}`);
         }
 
@@ -504,21 +514,108 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
 
         const reader = response.body.getReader();
         let accumulatedContent = "";
+        let accumulatedReasoning = "";
         const accumulatedToolCalls: OllamaToolCall[] = [];
         let finalResponse: OllamaChatResponse | undefined;
 
-        for await (const chunk of parseNdjsonStream(reader)) {
-          if (chunk.message?.content) {
-            accumulatedContent += chunk.message.content;
-          } else if (chunk.message?.reasoning) {
-            // Qwen 3 reasoning mode: content may be empty, output in reasoning
-            accumulatedContent += chunk.message.reasoning;
-          }
+        const modelInfo = { api: model.api, provider: model.provider, id: model.id };
+        const usage = {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        };
+        const output: AssistantMessage = {
+          role: "assistant",
+          content: [],
+          stopReason: "stop",
+          api: modelInfo.api,
+          provider: modelInfo.provider,
+          model: modelInfo.id,
+          usage: { ...usage },
+          timestamp: Date.now(),
+        };
+        stream.push({ type: "start", partial: output });
 
-          // Ollama sends tool_calls in intermediate (done:false) chunks,
-          // NOT in the final done:true chunk. Collect from all chunks.
-          if (chunk.message?.tool_calls) {
-            accumulatedToolCalls.push(...chunk.message.tool_calls);
+        let hasPushedThinkingStart = false;
+        let hasPushedThinkingEnd = false;
+        let hasPushedTextStart = false;
+
+        for await (const chunk of parseNdjsonStream(reader)) {
+          try {
+            const msg = chunk.message;
+            const reasoningDelta =
+              (typeof msg?.reasoning === "string" ? msg.reasoning : "") +
+              (typeof msg?.thinking === "string" ? msg.thinking : "");
+            const contentDelta =
+              typeof msg?.content === "string" ? msg.content : msg?.content === null ? "" : "";
+
+            if (reasoningDelta) {
+              accumulatedReasoning += reasoningDelta;
+              if (!hasPushedThinkingStart) {
+                hasPushedThinkingStart = true;
+                output.content = [{ type: "thinking", thinking: accumulatedReasoning }];
+                stream.push({ type: "thinking_start", contentIndex: 0, partial: output });
+              } else {
+                (output.content[0] as { type: "thinking"; thinking: string }).thinking =
+                  accumulatedReasoning;
+                stream.push({
+                  type: "thinking_delta",
+                  contentIndex: 0,
+                  delta: reasoningDelta,
+                  partial: output,
+                });
+              }
+            }
+
+            if (contentDelta) {
+              if (hasPushedThinkingStart && !hasPushedThinkingEnd) {
+                hasPushedThinkingEnd = true;
+                (output.content[0] as { type: "thinking"; thinking: string }).thinking =
+                  accumulatedReasoning;
+                stream.push({
+                  type: "thinking_end",
+                  contentIndex: 0,
+                  content: accumulatedReasoning,
+                  partial: output,
+                });
+              }
+              accumulatedContent += contentDelta;
+              const textBlockIndex = hasPushedThinkingStart ? 1 : 0;
+              if (!hasPushedTextStart) {
+                hasPushedTextStart = true;
+                if (textBlockIndex === 0) {
+                  output.content = [{ type: "text", text: accumulatedContent }];
+                } else {
+                  output.content[1] = { type: "text", text: accumulatedContent };
+                }
+                stream.push({
+                  type: "text_start",
+                  contentIndex: textBlockIndex,
+                  partial: output,
+                });
+              } else {
+                (
+                  output.content[textBlockIndex] as { type: "text"; text: string }
+                ).text = accumulatedContent;
+                stream.push({
+                  type: "text_delta",
+                  contentIndex: textBlockIndex,
+                  delta: contentDelta,
+                  partial: output,
+                });
+              }
+            }
+
+            if (msg?.tool_calls?.length) {
+              accumulatedToolCalls.push(...msg.tool_calls);
+            }
+          } catch (chunkErr) {
+            log.warn(
+              `Ollama stream chunk error (continuing): ${chunkErr instanceof Error ? chunkErr.message : String(chunkErr)}`,
+            );
           }
 
           if (chunk.done) {
@@ -531,16 +628,39 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
           throw new Error("Ollama API stream ended without a final response");
         }
 
+        if (hasPushedThinkingStart && !hasPushedThinkingEnd) {
+          hasPushedThinkingEnd = true;
+          (output.content[0] as { type: "thinking"; thinking: string }).thinking =
+            accumulatedReasoning;
+          stream.push({
+            type: "thinking_end",
+            contentIndex: 0,
+            content: accumulatedReasoning,
+            partial: output,
+          });
+        }
+        if (hasPushedTextStart) {
+          const textBlockIndex = hasPushedThinkingStart ? 1 : 0;
+          (
+            output.content[textBlockIndex] as { type: "text"; text: string }
+          ).text = accumulatedContent;
+          stream.push({
+            type: "text_end",
+            contentIndex: textBlockIndex,
+            content: accumulatedContent,
+            partial: output,
+          });
+        }
+
         finalResponse.message.content = accumulatedContent;
+        if (accumulatedReasoning && !accumulatedContent) {
+          finalResponse.message.content = accumulatedReasoning;
+        }
         if (accumulatedToolCalls.length > 0) {
           finalResponse.message.tool_calls = accumulatedToolCalls;
         }
 
-        const assistantMessage = buildAssistantMessage(finalResponse, {
-          api: model.api,
-          provider: model.provider,
-          id: model.id,
-        });
+        const assistantMessage = buildAssistantMessage(finalResponse, modelInfo);
 
         const reason: Extract<StopReason, "stop" | "length" | "toolUse"> =
           assistantMessage.stopReason === "toolUse" ? "toolUse" : "stop";

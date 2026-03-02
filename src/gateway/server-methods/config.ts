@@ -2,6 +2,8 @@ import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/ag
 import { listChannelPlugins } from "../../channels/plugins/index.js";
 import {
   CONFIG_PATH,
+  clearConfigCache,
+  clearRuntimeConfigSnapshot,
   loadConfig,
   parseConfigJson5,
   readConfigFileSnapshot,
@@ -27,6 +29,10 @@ import {
 } from "../../infra/restart-sentinel.js";
 import { scheduleGatewaySigusr1Restart } from "../../infra/restart.js";
 import { loadOpenClawPlugins } from "../../plugins/loader.js";
+import {
+  agentsDefaultsModelChanged,
+  clearSessionModelOverridesForDefaultAgent,
+} from "../clear-session-model-on-default-change.js";
 import { diffConfigPaths } from "../config-reload.js";
 import {
   formatControlPlaneActor,
@@ -271,12 +277,21 @@ export const configHandlers: GatewayRequestHandlers = {
       return;
     }
     await writeConfigFile(parsed.config, writeOptions);
+    clearConfigCache();
+    clearRuntimeConfigSnapshot();
+    if (agentsDefaultsModelChanged(snapshot.config, parsed.config)) {
+      void clearSessionModelOverridesForDefaultAgent(parsed.config).catch(() => {
+        // Best-effort: avoid unhandled rejection; session store may not exist yet
+      });
+    }
+    const freshSnapshot = await readConfigFileSnapshot();
     respond(
       true,
       {
         ok: true,
         path: CONFIG_PATH,
         config: redactConfigObject(parsed.config, parsed.schema.uiHints),
+        hash: freshSnapshot.hash ?? undefined,
       },
       undefined,
     );
@@ -361,6 +376,9 @@ export const configHandlers: GatewayRequestHandlers = {
       `config.patch write ${formatControlPlaneActor(actor)} changedPaths=${summarizeChangedPaths(changedPaths)} restartReason=config.patch`,
     );
     await writeConfigFile(validated.config, writeOptions);
+    if (agentsDefaultsModelChanged(snapshot.config, validated.config)) {
+      void clearSessionModelOverridesForDefaultAgent(validated.config).catch(() => {});
+    }
 
     const { sessionKey, note, restartDelayMs, deliveryContext, threadId } =
       resolveConfigRestartRequest(params);
@@ -421,6 +439,9 @@ export const configHandlers: GatewayRequestHandlers = {
       `config.apply write ${formatControlPlaneActor(actor)} changedPaths=${summarizeChangedPaths(changedPaths)} restartReason=config.apply`,
     );
     await writeConfigFile(parsed.config, writeOptions);
+    if (agentsDefaultsModelChanged(snapshot.config, parsed.config)) {
+      void clearSessionModelOverridesForDefaultAgent(parsed.config).catch(() => {});
+    }
 
     const { sessionKey, note, restartDelayMs, deliveryContext, threadId } =
       resolveConfigRestartRequest(params);

@@ -140,9 +140,25 @@ export async function saveConfig(state: ConfigState) {
       state.lastError = "Config hash missing; reload and retry.";
       return;
     }
-    await state.client.request("config.set", { raw, baseHash });
+    const res = await state.client.request<{
+      ok?: boolean;
+      config?: Record<string, unknown>;
+      hash?: string | null;
+    }>("config.set", { raw, baseHash });
     state.configFormDirty = false;
-    await loadConfig(state);
+    if (res?.config) {
+      applyConfigSnapshot(state, {
+        path: state.configSnapshot?.path,
+        exists: state.configSnapshot?.exists,
+        raw: state.configSnapshot?.raw,
+        valid: true,
+        config: res.config,
+        hash: res.hash ?? state.configSnapshot?.hash ?? null,
+        issues: [],
+      });
+    } else {
+      await loadConfig(state);
+    }
   } catch (err) {
     state.lastError = String(err);
   } finally {

@@ -478,7 +478,13 @@ export async function runEmbeddedAttempt(
         | undefined;
     // Respect an explicit promptMode for main sessions, but always keep subagents on "minimal".
     if (configuredPromptMode && promptMode === "full") {
-      promptMode = configuredPromptMode === "none" ? "full" : configuredPromptMode;
+      const resolved: "full" | "minimal" =
+        configuredPromptMode === "none"
+          ? "full"
+          : configuredPromptMode === "lite"
+            ? "minimal"
+            : configuredPromptMode;
+      promptMode = resolved;
     }
     const docsPath = await resolveOpenClawDocsPath({
       workspaceDir: effectiveWorkspace,
@@ -705,7 +711,12 @@ export async function runEmbeddedAttempt(
           typeof params.model.baseUrl === "string" ? params.model.baseUrl.trim() : "";
         const providerBaseUrl =
           typeof providerConfig?.baseUrl === "string" ? providerConfig.baseUrl.trim() : "";
-        const ollamaBaseUrl = modelBaseUrl || providerBaseUrl || OLLAMA_NATIVE_BASE_URL;
+        // In Docker, env override ensures we hit host Ollama even when config is wrong or missing.
+        const envBase = process.env.OPENCLAW_OLLAMA_BASE_URL?.trim();
+        const useEnv = envBase && envBase.length > 0;
+        const ollamaBaseUrl = useEnv
+          ? envBase.replace(/\/+$/, "").replace(/\/v1$/i, "")
+          : modelBaseUrl || providerBaseUrl || OLLAMA_NATIVE_BASE_URL;
         activeSession.agent.streamFn = createOllamaStreamFn(ollamaBaseUrl);
       } else {
         // Force a stable streamFn reference so vitest can reliably mock @mariozechner/pi-ai.

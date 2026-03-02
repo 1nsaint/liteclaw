@@ -67,6 +67,7 @@ export type AgentsProps = {
   toolsCatalogError: string | null;
   toolsCatalogResult: ToolsCatalogResult | null;
   skillsFilter: string;
+  catalogModels: Array<{ provider: string; id: string; name?: string }>;
   onRefresh: () => void;
   onSelectAgent: (agentId: string) => void;
   onSelectPanel: (panel: AgentsPanel) => void;
@@ -180,6 +181,7 @@ export function renderAgents(props: AgentsProps) {
                         configLoading: props.configLoading,
                         configSaving: props.configSaving,
                         configDirty: props.configDirty,
+                        catalogModels: props.catalogModels,
                         onConfigReload: props.onConfigReload,
                         onConfigSave: props.onConfigSave,
                         onModelChange: props.onModelChange,
@@ -355,6 +357,7 @@ function renderAgentOverview(params: {
   configLoading: boolean;
   configSaving: boolean;
   configDirty: boolean;
+  catalogModels: Array<{ provider: string; id: string; name?: string }>;
   onConfigReload: () => void;
   onConfigSave: () => void;
   onModelChange: (agentId: string, modelId: string | null) => void;
@@ -370,6 +373,7 @@ function renderAgentOverview(params: {
     configLoading,
     configSaving,
     configDirty,
+    catalogModels,
     onConfigReload,
     onConfigSave,
     onModelChange,
@@ -464,7 +468,7 @@ function renderAgentOverview(params: {
                       </option>
                     `
               }
-              ${buildModelOptions(configForm, effectivePrimary ?? undefined)}
+              ${buildModelOptions(configForm, effectivePrimary ?? undefined, catalogModels)}
             </select>
           </label>
           <label class="field" style="min-width: 260px; flex: 1;">

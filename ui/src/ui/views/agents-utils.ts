@@ -289,11 +289,36 @@ function resolveConfiguredModels(
   return options;
 }
 
+/** Catalog entry from gateway models.list (e.g. Ollama-downloaded models). */
+export type CatalogModelEntry = { provider: string; id: string; name?: string };
+
+function catalogToOptions(
+  catalog: Array<CatalogModelEntry>,
+  configuredValues: Set<string>,
+): ConfiguredModelOption[] {
+  const options: ConfiguredModelOption[] = [];
+  for (const entry of catalog) {
+    const value = `${entry.provider}/${entry.id}`.trim();
+    if (!value || configuredValues.has(value)) {
+      continue;
+    }
+    const label = entry.name && entry.name !== entry.id ? `${entry.name} (${value})` : value;
+    options.push({ value, label });
+  }
+  return options;
+}
+
 export function buildModelOptions(
   configForm: Record<string, unknown> | null,
   current?: string | null,
+  catalog?: Array<CatalogModelEntry> | null,
 ) {
-  const options = resolveConfiguredModels(configForm);
+  const configured = resolveConfiguredModels(configForm);
+  const configuredValueSet = new Set(configured.map((o) => o.value));
+  const catalogOptions = catalog?.length
+    ? catalogToOptions(catalog, configuredValueSet)
+    : [];
+  const options = [...configured, ...catalogOptions];
   const hasCurrent = current ? options.some((option) => option.value === current) : false;
   if (current && !hasCurrent) {
     options.unshift({ value: current, label: `Current (${current})` });

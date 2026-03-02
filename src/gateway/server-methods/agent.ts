@@ -320,6 +320,7 @@ export const agentHandlers: GatewayRequestHandlers = {
     let skipTimestampInjection = false;
 
     const resetCommandMatch = message.match(RESET_COMMAND_RE);
+    let isBareResetRun = false;
     if (resetCommandMatch && requestedSessionKey) {
       const resetReason = resetCommandMatch[1]?.toLowerCase() === "new" ? "new" : "reset";
       const resetResult = await runSessionResetFromAgent({
@@ -344,6 +345,7 @@ export const agentHandlers: GatewayRequestHandlers = {
         // reset first, then run a fresh-session greeting prompt in-place.
         message = BARE_SESSION_RESET_PROMPT;
         skipTimestampInjection = true;
+        isBareResetRun = true;
       }
     }
 
@@ -459,7 +461,10 @@ export const agentHandlers: GatewayRequestHandlers = {
           bestEffortDeliver = true;
         }
       }
-      registerAgentRunContext(idem, { sessionKey: canonicalSessionKey });
+      registerAgentRunContext(idem, {
+        sessionKey: canonicalSessionKey,
+        ...(isBareResetRun ? { isBareResetRun: true } : {}),
+      });
     }
 
     const runId = idem;

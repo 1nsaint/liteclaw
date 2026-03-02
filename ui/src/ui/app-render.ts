@@ -548,6 +548,7 @@ export function renderApp(state: AppViewState) {
                 toolsCatalogError: state.toolsCatalogError,
                 toolsCatalogResult: state.toolsCatalogResult,
                 skillsFilter: state.skillsFilter,
+                catalogModels: state.agentsCatalogModels ?? [],
                 onRefresh: async () => {
                   await loadAgents(state);
                   const nextSelected =
@@ -787,35 +788,56 @@ export function renderApp(state: AppViewState) {
                     return;
                   }
                   const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
-                  if (!Array.isArray(list)) {
-                    return;
-                  }
-                  const index = list.findIndex(
+                  const defaultId = state.agentsList?.defaultId ?? null;
+                  const entries = Array.isArray(list) ? list : [];
+                  const index = entries.findIndex(
                     (entry) =>
                       entry &&
                       typeof entry === "object" &&
                       "id" in entry &&
                       (entry as { id?: string }).id === agentId,
                   );
-                  if (index < 0) {
+                  const isDefaultAgent =
+                    (defaultId && agentId === defaultId) || (index < 0 && entries.length === 0);
+                  if (index >= 0) {
+                    const basePath = ["agents", "list", index, "model"];
+                    if (!modelId) {
+                      removeConfigFormValue(state, basePath);
+                      return;
+                    }
+                    const entry = entries[index] as { model?: unknown };
+                    const existing = entry?.model;
+                    if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+                      const fallbacks = (existing as { fallbacks?: unknown }).fallbacks;
+                      const next = {
+                        primary: modelId,
+                        ...(Array.isArray(fallbacks) ? { fallbacks } : {}),
+                      };
+                      updateConfigFormValue(state, basePath, next);
+                    } else {
+                      updateConfigFormValue(state, basePath, modelId);
+                    }
                     return;
                   }
-                  const basePath = ["agents", "list", index, "model"];
-                  if (!modelId) {
-                    removeConfigFormValue(state, basePath);
-                    return;
-                  }
-                  const entry = list[index] as { model?: unknown };
-                  const existing = entry?.model;
-                  if (existing && typeof existing === "object" && !Array.isArray(existing)) {
-                    const fallbacks = (existing as { fallbacks?: unknown }).fallbacks;
-                    const next = {
-                      primary: modelId,
-                      ...(Array.isArray(fallbacks) ? { fallbacks } : {}),
-                    };
-                    updateConfigFormValue(state, basePath, next);
-                  } else {
-                    updateConfigFormValue(state, basePath, modelId);
+                  if (isDefaultAgent) {
+                    const basePath = ["agents", "defaults", "model"];
+                    if (!modelId) {
+                      removeConfigFormValue(state, basePath);
+                      return;
+                    }
+                    const defaults = (configValue as { agents?: { defaults?: { model?: unknown } } })
+                      .agents?.defaults?.model;
+                    const existing = defaults;
+                    if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+                      const fallbacks = (existing as { fallbacks?: unknown }).fallbacks;
+                      const next = {
+                        primary: modelId,
+                        ...(Array.isArray(fallbacks) ? { fallbacks } : {}),
+                      };
+                      updateConfigFormValue(state, basePath, next);
+                    } else {
+                      updateConfigFormValue(state, basePath, modelId);
+                    }
                   }
                 },
                 onModelFallbacksChange: (agentId, fallbacks) => {
@@ -823,49 +845,69 @@ export function renderApp(state: AppViewState) {
                     return;
                   }
                   const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
-                  if (!Array.isArray(list)) {
-                    return;
-                  }
-                  const index = list.findIndex(
+                  const defaultId = state.agentsList?.defaultId ?? null;
+                  const entries = Array.isArray(list) ? list : [];
+                  const index = entries.findIndex(
                     (entry) =>
                       entry &&
                       typeof entry === "object" &&
                       "id" in entry &&
                       (entry as { id?: string }).id === agentId,
                   );
-                  if (index < 0) {
-                    return;
-                  }
-                  const basePath = ["agents", "list", index, "model"];
-                  const entry = list[index] as { model?: unknown };
+                  const isDefaultAgent =
+                    (defaultId && agentId === defaultId) || (index < 0 && entries.length === 0);
                   const normalized = fallbacks.map((name) => name.trim()).filter(Boolean);
-                  const existing = entry.model;
-                  const resolvePrimary = () => {
-                    if (typeof existing === "string") {
-                      return existing.trim() || null;
+                  const resolvePrimary = (modelRaw: unknown): string | null => {
+                    if (typeof modelRaw === "string") {
+                      const t = modelRaw.trim();
+                      return t || null;
                     }
-                    if (existing && typeof existing === "object" && !Array.isArray(existing)) {
-                      const primary = (existing as { primary?: unknown }).primary;
+                    if (modelRaw && typeof modelRaw === "object" && !Array.isArray(modelRaw)) {
+                      const primary = (modelRaw as { primary?: unknown }).primary;
                       if (typeof primary === "string") {
-                        const trimmed = primary.trim();
-                        return trimmed || null;
+                        const t = primary.trim();
+                        return t || null;
                       }
                     }
                     return null;
                   };
-                  const primary = resolvePrimary();
-                  if (normalized.length === 0) {
-                    if (primary) {
-                      updateConfigFormValue(state, basePath, primary);
-                    } else {
-                      removeConfigFormValue(state, basePath);
+                  if (index >= 0) {
+                    const basePath = ["agents", "list", index, "model"];
+                    const entry = entries[index] as { model?: unknown };
+                    const existing = entry?.model;
+                    const primary = resolvePrimary(existing);
+                    if (normalized.length === 0) {
+                      if (primary) {
+                        updateConfigFormValue(state, basePath, primary);
+                      } else {
+                        removeConfigFormValue(state, basePath);
+                      }
+                      return;
                     }
+                    const next = primary
+                      ? { primary, fallbacks: normalized }
+                      : { fallbacks: normalized };
+                    updateConfigFormValue(state, basePath, next);
                     return;
                   }
-                  const next = primary
-                    ? { primary, fallbacks: normalized }
-                    : { fallbacks: normalized };
-                  updateConfigFormValue(state, basePath, next);
+                  if (isDefaultAgent) {
+                    const basePath = ["agents", "defaults", "model"];
+                    const existing = (configValue as { agents?: { defaults?: { model?: unknown } } })
+                      .agents?.defaults?.model;
+                    const primary = resolvePrimary(existing);
+                    if (normalized.length === 0) {
+                      if (primary) {
+                        updateConfigFormValue(state, basePath, primary);
+                      } else {
+                        removeConfigFormValue(state, basePath);
+                      }
+                      return;
+                    }
+                    const next = primary
+                      ? { primary, fallbacks: normalized }
+                      : { fallbacks: normalized };
+                    updateConfigFormValue(state, basePath, next);
+                  }
                 },
               })
             : nothing

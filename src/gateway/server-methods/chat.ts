@@ -1,14 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { CURRENT_SESSION_VERSION } from "@mariozechner/pi-coding-agent";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
+import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../../agents/defaults.js";
 import { resolveThinkingDefault } from "../../agents/model-selection.js";
 import { resolveAgentTimeoutMs } from "../../agents/timeout.js";
 import { dispatchInboundMessage } from "../../auto-reply/dispatch.js";
 import { createReplyDispatcher } from "../../auto-reply/reply/reply-dispatcher.js";
 import type { MsgContext } from "../../auto-reply/templating.js";
 import { createReplyPrefixOptions } from "../../channels/reply-prefix.js";
-import { resolveSessionFilePath } from "../../config/sessions.js";
+import { resolveSessionFilePath, updateSessionStore } from "../../config/sessions.js";
+import { clearConfigCache, loadConfig, writeConfigFile } from "../../config/config.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import {
   stripInlineDirectiveTagsForDisplay,
@@ -732,7 +735,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       }
     }
     const rawSessionKey = p.sessionKey;
-    const { cfg, entry, canonicalKey: sessionKey } = loadSessionEntry(rawSessionKey);
+    let { cfg, storePath, entry, canonicalKey: sessionKey } = loadSessionEntry(rawSessionKey);
     const timeoutMs = resolveAgentTimeoutMs({
       cfg,
       overrideMs: p.timeoutMs,
@@ -799,6 +802,72 @@ export const chatHandlers: GatewayRequestHandlers = {
         status: "started" as const,
       };
       respond(true, ackPayload, undefined, { runId: clientRunId });
+
+      // When no model is configured, session defaults to anthropic (no API key).
+      // Prefer Ollama: persist to config and patch session so this and future requests use it.
+      const sessionAgentId = resolveSessionAgentId({ sessionKey, config: cfg });
+      const resolvedModel = resolveSessionModelRef(cfg, entry, sessionAgentId);
+      if (
+        resolvedModel.provider === DEFAULT_PROVIDER &&
+        resolvedModel.model === DEFAULT_MODEL &&
+        storePath
+      ) {
+        const catalog = await context.loadGatewayModelCatalog();
+        const ollamaOnly = catalog.filter(
+          (m) => m.provider.toLowerCase().trim() === "ollama",
+        );
+        if (ollamaOnly.length > 0) {
+          const first = ollamaOnly[0];
+          const primaryRef = `ollama/${first.id}`;
+          // Persist default model to config so resolveDefaultModelForAgent returns Ollama.
+          try {
+            const currentCfg = loadConfig();
+            const nextAgents = {
+              ...currentCfg.agents,
+              defaults: {
+                ...currentCfg.agents?.defaults,
+                model:
+                  typeof currentCfg.agents?.defaults?.model === "object" &&
+                  currentCfg.agents?.defaults?.model !== null
+                    ? { ...currentCfg.agents.defaults.model, primary: primaryRef }
+                    : { primary: primaryRef },
+              },
+            };
+            await writeConfigFile({ ...currentCfg, agents: nextAgents });
+            clearConfigCache();
+          } catch (e) {
+            context.logGateway.warn(
+              `Could not persist Ollama default model: ${formatForLog(e)}`,
+            );
+          }
+          // Patch session store so this request uses Ollama (normalized key for reply lookup).
+          const normalizedKey = sessionKey.trim().toLowerCase();
+          await updateSessionStore(storePath, (store) => {
+            const existingKey = Object.keys(store).find(
+              (k) => k.toLowerCase() === normalizedKey,
+            );
+            const existing = existingKey ? store[existingKey] : undefined;
+            const next = existing
+              ? {
+                  ...existing,
+                  providerOverride: "ollama",
+                  modelOverride: first.id,
+                }
+              : {
+                  sessionId: randomUUID(),
+                  updatedAt: Date.now(),
+                  providerOverride: "ollama" as const,
+                  modelOverride: first.id,
+                };
+            if (existingKey && existingKey !== normalizedKey) {
+              delete store[existingKey];
+            }
+            store[normalizedKey] = next;
+          });
+          // Reload config so dispatch sees Ollama as default for this request.
+          cfg = loadConfig();
+        }
+      }
 
       const trimmedMessage = parsedMessage.trim();
       const injectThinking = Boolean(

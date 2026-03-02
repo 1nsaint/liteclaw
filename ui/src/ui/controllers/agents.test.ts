@@ -13,6 +13,7 @@ function createState(): { state: AgentsState; request: ReturnType<typeof vi.fn> 
     agentsError: null,
     agentsList: null,
     agentsSelectedId: "main",
+    agentsCatalogModels: [],
     toolsCatalogLoading: false,
     toolsCatalogError: null,
     toolsCatalogResult: null,

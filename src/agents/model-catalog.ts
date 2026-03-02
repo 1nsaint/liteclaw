@@ -35,6 +35,57 @@ const OPENAI_CODEX_GPT53_MODEL_ID = "gpt-5.3-codex";
 const OPENAI_CODEX_GPT53_SPARK_MODEL_ID = "gpt-5.3-codex-spark";
 const NON_PI_NATIVE_MODEL_PROVIDERS = new Set(["kilocode"]);
 
+const OLLAMA_DEFAULT_BASE = "http://127.0.0.1:11434";
+
+function resolveOllamaBaseForCatalog(configuredBaseUrl?: string): string {
+  if (!configuredBaseUrl?.trim()) {
+    return OLLAMA_DEFAULT_BASE;
+  }
+  const trimmed = configuredBaseUrl.trim().replace(/\/+$/, "");
+  return trimmed.replace(/\/v1$/i, "") || OLLAMA_DEFAULT_BASE;
+}
+
+type OllamaTagsModel = { name?: string };
+type OllamaTagsResponse = { models?: OllamaTagsModel[] };
+
+async function fetchOllamaCatalogEntries(config: OpenClawConfig): Promise<ModelCatalogEntry[]> {
+  const ollamaProvider = config.models?.providers?.ollama;
+  if (!ollamaProvider || typeof ollamaProvider !== "object") {
+    return [];
+  }
+  if (process.env.VITEST === "true" || process.env.NODE_ENV === "test") {
+    return [];
+  }
+  const baseUrl = resolveOllamaBaseForCatalog(
+    (ollamaProvider as { baseUrl?: string }).baseUrl,
+  );
+  try {
+    const response = await fetch(`${baseUrl}/api/tags`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) {
+      return [];
+    }
+    const data = (await response.json()) as OllamaTagsResponse;
+    const list = data?.models ?? [];
+    const entries: ModelCatalogEntry[] = [];
+    for (const m of list) {
+      const id = typeof m?.name === "string" ? m.name.trim() : "";
+      if (!id) continue;
+      entries.push({
+        id,
+        name: id,
+        provider: "ollama",
+        reasoning:
+          id.toLowerCase().includes("r1") || id.toLowerCase().includes("reasoning"),
+      });
+    }
+    return entries;
+  } catch {
+    return [];
+  }
+}
+
 function applyOpenAICodexSparkFallback(models: ModelCatalogEntry[]): void {
   const hasSpark = models.some(
     (entry) =>
@@ -216,6 +267,21 @@ export async function loadModelCatalog(params?: {
         models.push({ id, name, provider, contextWindow, reasoning, input });
       }
       mergeConfiguredOptInProviderModels({ config: cfg, models });
+      const ollamaEntries = await fetchOllamaCatalogEntries(cfg);
+      if (ollamaEntries.length > 0) {
+        const seen = new Set(
+          models.map(
+            (e) => `${e.provider.toLowerCase().trim()}::${e.id.toLowerCase().trim()}`,
+          ),
+        );
+        for (const entry of ollamaEntries) {
+          const key = `${entry.provider.toLowerCase().trim()}::${entry.id.toLowerCase().trim()}`;
+          if (!seen.has(key)) {
+            models.push(entry);
+            seen.add(key);
+          }
+        }
+      }
       applyOpenAICodexSparkFallback(models);
 
       if (models.length === 0) {

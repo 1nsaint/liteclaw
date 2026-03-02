@@ -356,6 +356,30 @@ export function createAgentEventHandler({
       nodeSendToSession(sessionKey, "chat", payload);
       return;
     }
+    // If this was a bare /new or /reset run and the failure is an HTTP 404
+    // (e.g. proxy or upstream returned 404), treat as success so the user
+    // isn’t shown a raw 404 and can continue chatting.
+    const runCtx =
+      getAgentRunContext(clientRunId) ?? getAgentRunContext(sourceRunId);
+    const errStr = error != null ? formatForLog(error) : "";
+    const is404Like =
+      /HTTP\s+404|404\s+page\s+not\s+found/i.test(errStr) || /HTTP\s*404/i.test(errStr);
+    if (runCtx?.isBareResetRun && is404Like) {
+      const payload = {
+        runId: clientRunId,
+        sessionKey,
+        seq,
+        state: "final" as const,
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Session reset. Ready for your message." }],
+          timestamp: Date.now(),
+        },
+      };
+      broadcast("chat", payload);
+      nodeSendToSession(sessionKey, "chat", payload);
+      return;
+    }
     const payload = {
       runId: clientRunId,
       sessionKey,

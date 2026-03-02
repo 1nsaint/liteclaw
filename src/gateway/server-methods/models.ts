@@ -25,12 +25,22 @@ export const modelsHandlers: GatewayRequestHandlers = {
     try {
       const catalog = await context.loadGatewayModelCatalog();
       const cfg = loadConfig();
-      const { allowedCatalog } = buildAllowedModelSet({
+      const { allowedCatalog, allowAny } = buildAllowedModelSet({
         cfg,
         catalog,
         defaultProvider: DEFAULT_PROVIDER,
       });
-      const models = allowedCatalog.length > 0 ? allowedCatalog : catalog;
+      let models = allowedCatalog.length > 0 ? allowedCatalog : catalog;
+      // When no allowlist is set, show only Ollama (local) models if any exist,
+      // so the UI doesn't show hundreds of cloud models.
+      if (allowAny && models.length > 0) {
+        const ollamaOnly = models.filter(
+          (m) => m.provider.toLowerCase().trim() === "ollama",
+        );
+        if (ollamaOnly.length > 0) {
+          models = ollamaOnly;
+        }
+      }
       respond(true, { models }, undefined);
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
