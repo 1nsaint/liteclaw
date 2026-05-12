@@ -5,6 +5,7 @@ import {
   resolveAgentDir,
   resolveAgentWorkspaceDir,
 } from "../../agents/agent-scope.js";
+import { getBuiltInToolNames } from "../../agents/pi-tools.js";
 import {
   DEFAULT_AGENTS_FILENAME,
   DEFAULT_BOOTSTRAP_FILENAME,
@@ -361,6 +362,16 @@ export const agentsHandlers: GatewayRequestHandlers = {
     const cfg = loadConfig();
     const result = listAgentsForGateway(cfg);
     respond(true, result, undefined);
+  },
+  "agents.toolNames": ({ params, respond }) => {
+    const cfg = loadConfig();
+    const rawAgentId = params?.agentId;
+    const agentIdStr = typeof rawAgentId === "string" ? rawAgentId : "";
+    const agentId = normalizeAgentId(agentIdStr.trim() || DEFAULT_AGENT_ID);
+    const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
+    const resolvedDir = resolveUserPath(workspaceDir);
+    const toolNames = getBuiltInToolNames(resolvedDir);
+    respond(true, { toolNames }, undefined);
   },
   "agents.create": async ({ params, respond }) => {
     if (!validateAgentsCreateParams(params)) {

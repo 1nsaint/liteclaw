@@ -79,6 +79,8 @@ export type FollowupRun = {
     ownerNumbers?: string[];
     extraSystemPrompt?: string;
     enforceFinalTag?: boolean;
+    /** When tools are enabled, only send these tool names. Omit or empty = all tools. */
+    toolsAllow?: string[];
   };
 };
 

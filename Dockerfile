@@ -49,7 +49,11 @@ COPY --chown=node:node . .
 RUN pnpm build
 # Force pnpm for UI build (Bun may fail on ARM/Synology architectures)
 ENV OPENCLAW_PREFER_PNPM=1
+# Bake LiteClaw brand into the Control UI bundle (Vite inlines VITE_* at build time)
+ENV VITE_APP_BRAND=LiteClaw
 RUN pnpm ui:build
+# Fingerprint so you can verify this image is from *this* build (curl http://localhost:18789/build-info.txt)
+RUN echo "LiteClaw $(date -Iseconds) image-build" > /app/dist/control-ui/build-info.txt
 
 ENV NODE_ENV=production
 

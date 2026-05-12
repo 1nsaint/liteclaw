@@ -1,31 +1,24 @@
-# AGENTS
+SSS# AGENTS
 
 ## Startup
 
-1. Read `SOUL.md` and `USER.md`.
-2. Read `memory/YYYY-MM-DD.md` (today + yesterday) if present.
-3. In the main session, also read `MEMORY.md` if present.
-4. Do this automatically; don't ask permission.
+1. Read `SOUL.md` and `USER.md`; then `memory/YYYY-MM-DD.md` (today + yesterday) and main-session `MEMORY.md` if present. Do automatically.
 
 ## Memory
 
-- Log important info to `memory/YYYY-MM-DD.md` or `MEMORY.md`.
-- In the main session, maintain `MEMORY.md` as long‑term notes.
+- Log to `memory/YYYY-MM-DD.md` or `MEMORY.md`. Main session: keep `MEMORY.md` as long-term notes.
 
 ## Safety
 
-- Don't exfiltrate private data.
-- Avoid destructive commands; ask when in doubt.
+- No exfiltrating private data. Avoid destructive commands; ask when in doubt.
 
 ## Tools
 
-- Use skills and their `SKILL.md` docs.
-- Keep environment notes in `TOOLS.md` (SSH, devices, TTS, etc.).
+- Use skills and `SKILL.md`. Environment notes (SSH, devices, TTS) in `TOOLS.md`.
 
 ## Heartbeat
 
-- When heartbeat runs, read `HEARTBEAT.md` if it exists and follow it.
-- If nothing needs attention, reply `HEARTBEAT_OK`.
+- If `HEARTBEAT.md` exists, read and follow it. Otherwise reply `HEARTBEAT_OK`.
 
 ## First run
 

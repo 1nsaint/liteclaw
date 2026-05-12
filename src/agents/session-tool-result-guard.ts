@@ -141,6 +141,7 @@ export function installSessionToolResultGuard(
         return undefined;
       }
       nextMessage = sanitized[0];
+      // Keep thinking blocks so UI can show them as separate collapsible/grey block; reply is already separate.
     }
     const nextRole = (nextMessage as { role?: unknown }).role;
 

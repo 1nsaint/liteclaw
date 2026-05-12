@@ -233,3 +233,35 @@ export function removeConfigFormValue(state: ConfigState, path: Array<string | n
     state.configRaw = serializeConfigForm(base);
   }
 }
+
+type AgentsForm = { agents?: { list?: Array<{ id?: string }> } };
+
+/**
+ * Ensures config form has agents.list and an entry for the given agentId.
+ * Creates agents.list and/or pushes { id: agentId } when missing.
+ * Returns the index of the entry, or -1 if config form is not loaded.
+ */
+export function ensureAgentListEntry(state: ConfigState, agentId: string): number {
+  if (!state.configForm) {
+    return -1;
+  }
+  const base = cloneConfigObject(state.configForm) as AgentsForm;
+  if (!base.agents || typeof base.agents !== "object") {
+    base.agents = {};
+  }
+  if (!Array.isArray(base.agents.list)) {
+    base.agents.list = [];
+  }
+  const list = base.agents.list;
+  let index = list.findIndex((entry) => entry && typeof entry === "object" && entry.id === agentId);
+  if (index < 0) {
+    list.push({ id: agentId });
+    index = list.length - 1;
+  }
+  state.configForm = base as Record<string, unknown>;
+  state.configFormDirty = true;
+  if (state.configFormMode === "form") {
+    state.configRaw = serializeConfigForm(base as Record<string, unknown>);
+  }
+  return index;
+}

@@ -377,7 +377,10 @@ describe("createOllamaStreamFn", () => {
           throw new Error("Expected done event");
         }
 
-        expect(doneEvent.message.content).toEqual([{ type: "text", text: "reasoned output" }]);
+        // When content is empty, reasoning is in a separate thinking block (not merged into reply).
+        expect(doneEvent.message.content).toEqual([
+          { type: "thinking", thinking: "reasoned output" },
+        ]);
       },
     );
   });

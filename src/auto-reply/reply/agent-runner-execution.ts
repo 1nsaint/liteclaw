@@ -301,6 +301,8 @@ export async function runAgentTurnWithFallback(params: {
             groupSpace: params.sessionCtx.GroupSpace?.trim() ?? undefined,
             ...senderContext,
             ...runBaseParams,
+            disableTools: params.followupRun.run.config?.agents?.defaults?.disableTools ?? false,
+            toolsAllow: params.followupRun.run.toolsAllow,
             prompt: params.commandBody,
             extraSystemPrompt: params.followupRun.run.extraSystemPrompt,
             toolResultFormat: (() => {

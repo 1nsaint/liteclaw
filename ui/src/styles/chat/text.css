@@ -2,7 +2,9 @@
    CHAT TEXT STYLING
    ============================================= */
 
-.chat-thinking {
+/* Thinking block: grey, terminal-like; separate from reply text */
+.chat-thinking,
+.chat-thinking--streaming {
   margin-bottom: 10px;
   padding: 10px 12px;
   border-radius: 10px;
@@ -13,9 +15,39 @@
   line-height: 1.4;
 }
 
-:root[data-theme="light"] .chat-thinking {
+.chat-thinking--streaming {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+:root[data-theme="light"] .chat-thinking,
+:root[data-theme="light"] .chat-thinking--streaming {
   border-color: rgba(16, 24, 40, 0.25);
   background: rgba(16, 24, 40, 0.04);
+  color: rgba(16, 24, 40, 0.6);
+}
+
+/* Collapsible thinking when message is done */
+.chat-thinking-details {
+  margin-bottom: 10px;
+}
+
+.chat-thinking-summary {
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  font-size: 12px;
+  list-style: none;
+  user-select: none;
+}
+
+.chat-thinking-summary::-webkit-details-marker {
+  display: none;
+}
+
+.chat-thinking-details[open] .chat-thinking-summary {
+  margin-bottom: 8px;
 }
 
 .chat-text {

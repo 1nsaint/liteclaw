@@ -165,6 +165,7 @@ export function connectGateway(host: GatewayHost) {
       // Any in-flight run's final event was lost during the disconnect window.
       host.chatRunId = null;
       (host as unknown as { chatStream: string | null }).chatStream = null;
+      (host as unknown as { chatStreamThinking: string | null }).chatStreamThinking = null;
       (host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt = null;
       resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
       void loadAssistantIdentity(host as unknown as OpenClawApp);
@@ -251,6 +252,13 @@ function handleChatGatewayEvent(host: GatewayHost, payload: ChatEventPayload | u
     );
   }
   const state = handleChatEvent(host as unknown as OpenClawApp, payload);
+  // Force re-render on stream deltas so thinking and reply text update live (like the terminal).
+  if (state === "delta") {
+    const app = host as unknown as OpenClawApp;
+    if (typeof app.requestUpdate === "function") {
+      app.requestUpdate();
+    }
+  }
   handleTerminalChatEvent(host, payload, state);
   if (state === "final" && shouldReloadHistoryForFinalEvent(payload)) {
     void loadChatHistory(host as unknown as OpenClawApp);

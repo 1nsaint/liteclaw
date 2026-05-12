@@ -37,6 +37,7 @@ const BASE_METHODS = [
   "models.list",
   "tools.catalog",
   "agents.list",
+  "agents.toolNames",
   "agents.create",
   "agents.update",
   "agents.delete",

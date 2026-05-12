@@ -1,5 +1,6 @@
 import { html, nothing } from "lit";
 import { parseAgentSessionKey } from "../../../src/routing/session-key.js";
+import { APP_BRAND } from "../app-brand.ts";
 import { t } from "../i18n/index.ts";
 import { refreshChatAvatar } from "./app-chat.ts";
 import { renderUsageTab } from "./app-render-usage-tab.ts";
@@ -14,6 +15,7 @@ import { loadChatHistory } from "./controllers/chat.ts";
 import {
   applyConfig,
   loadConfig,
+  ensureAgentListEntry,
   runUpdate,
   saveConfig,
   updateConfigFormValue,
@@ -233,10 +235,10 @@ export function renderApp(state: AppViewState) {
           </button>
           <div class="brand">
             <div class="brand-logo">
-              <img src=${basePath ? `${basePath}/favicon.svg` : "/favicon.svg"} alt="OpenClaw" />
+              <img src=${basePath ? `${basePath}/favicon.svg` : "/favicon.svg"} alt=${APP_BRAND} />
             </div>
             <div class="brand-text">
-              <div class="brand-title">OPENCLAW</div>
+              <div class="brand-title">${APP_BRAND}</div>
               <div class="brand-sub">Gateway Dashboard</div>
             </div>
           </div>
@@ -638,20 +640,7 @@ export function renderApp(state: AppViewState) {
                   void saveAgentFile(state, resolvedAgentId, name, content);
                 },
                 onToolsProfileChange: (agentId, profile, clearAllow) => {
-                  if (!configValue) {
-                    return;
-                  }
-                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
-                  if (!Array.isArray(list)) {
-                    return;
-                  }
-                  const index = list.findIndex(
-                    (entry) =>
-                      entry &&
-                      typeof entry === "object" &&
-                      "id" in entry &&
-                      (entry as { id?: string }).id === agentId,
-                  );
+                  const index = ensureAgentListEntry(state, agentId);
                   if (index < 0) {
                     return;
                   }
@@ -666,20 +655,7 @@ export function renderApp(state: AppViewState) {
                   }
                 },
                 onToolsOverridesChange: (agentId, alsoAllow, deny) => {
-                  if (!configValue) {
-                    return;
-                  }
-                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
-                  if (!Array.isArray(list)) {
-                    return;
-                  }
-                  const index = list.findIndex(
-                    (entry) =>
-                      entry &&
-                      typeof entry === "object" &&
-                      "id" in entry &&
-                      (entry as { id?: string }).id === agentId,
-                  );
+                  const index = ensureAgentListEntry(state, agentId);
                   if (index < 0) {
                     return;
                   }
@@ -706,24 +682,15 @@ export function renderApp(state: AppViewState) {
                   }
                 },
                 onAgentSkillToggle: (agentId, skillName, enabled) => {
-                  if (!configValue) {
-                    return;
-                  }
-                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
-                  if (!Array.isArray(list)) {
-                    return;
-                  }
-                  const index = list.findIndex(
-                    (entry) =>
-                      entry &&
-                      typeof entry === "object" &&
-                      "id" in entry &&
-                      (entry as { id?: string }).id === agentId,
-                  );
+                  const index = ensureAgentListEntry(state, agentId);
                   if (index < 0) {
                     return;
                   }
-                  const entry = list[index] as { skills?: unknown };
+                  const list = (state.configForm as { agents?: { list?: unknown[] } })?.agents
+                    ?.list;
+                  const entry = (Array.isArray(list) ? list[index] : undefined) as
+                    | { skills?: unknown }
+                    | undefined;
                   const normalizedSkill = skillName.trim();
                   if (!normalizedSkill) {
                     return;
@@ -744,40 +711,14 @@ export function renderApp(state: AppViewState) {
                   updateConfigFormValue(state, ["agents", "list", index, "skills"], [...next]);
                 },
                 onAgentSkillsClear: (agentId) => {
-                  if (!configValue) {
-                    return;
-                  }
-                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
-                  if (!Array.isArray(list)) {
-                    return;
-                  }
-                  const index = list.findIndex(
-                    (entry) =>
-                      entry &&
-                      typeof entry === "object" &&
-                      "id" in entry &&
-                      (entry as { id?: string }).id === agentId,
-                  );
+                  const index = ensureAgentListEntry(state, agentId);
                   if (index < 0) {
                     return;
                   }
                   removeConfigFormValue(state, ["agents", "list", index, "skills"]);
                 },
                 onAgentSkillsDisableAll: (agentId) => {
-                  if (!configValue) {
-                    return;
-                  }
-                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
-                  if (!Array.isArray(list)) {
-                    return;
-                  }
-                  const index = list.findIndex(
-                    (entry) =>
-                      entry &&
-                      typeof entry === "object" &&
-                      "id" in entry &&
-                      (entry as { id?: string }).id === agentId,
-                  );
+                  const index = ensureAgentListEntry(state, agentId);
                   if (index < 0) {
                     return;
                   }
@@ -825,8 +766,9 @@ export function renderApp(state: AppViewState) {
                       removeConfigFormValue(state, basePath);
                       return;
                     }
-                    const defaults = (configValue as { agents?: { defaults?: { model?: unknown } } })
-                      .agents?.defaults?.model;
+                    const defaults = (
+                      configValue as { agents?: { defaults?: { model?: unknown } } }
+                    ).agents?.defaults?.model;
                     const existing = defaults;
                     if (existing && typeof existing === "object" && !Array.isArray(existing)) {
                       const fallbacks = (existing as { fallbacks?: unknown }).fallbacks;
@@ -892,8 +834,9 @@ export function renderApp(state: AppViewState) {
                   }
                   if (isDefaultAgent) {
                     const basePath = ["agents", "defaults", "model"];
-                    const existing = (configValue as { agents?: { defaults?: { model?: unknown } } })
-                      .agents?.defaults?.model;
+                    const existing = (
+                      configValue as { agents?: { defaults?: { model?: unknown } } }
+                    ).agents?.defaults?.model;
                     const primary = resolvePrimary(existing);
                     if (normalized.length === 0) {
                       if (primary) {
@@ -1022,6 +965,7 @@ export function renderApp(state: AppViewState) {
                   state.chatMessage = "";
                   state.chatAttachments = [];
                   state.chatStream = null;
+                  state.chatStreamThinking = null;
                   state.chatStreamStartedAt = null;
                   state.chatRunId = null;
                   state.chatQueue = [];
@@ -1046,6 +990,7 @@ export function renderApp(state: AppViewState) {
                 messages: state.chatMessages,
                 toolMessages: state.chatToolMessages,
                 stream: state.chatStream,
+                streamThinking: state.chatStreamThinking,
                 streamStartedAt: state.chatStreamStartedAt,
                 draft: state.chatMessage,
                 queue: state.chatQueue,

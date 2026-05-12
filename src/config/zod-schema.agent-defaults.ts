@@ -34,6 +34,17 @@ export const AgentDefaultsSchema = z
     workspace: z.string().optional(),
     repoRoot: z.string().optional(),
     skipBootstrap: z.boolean().optional(),
+    /** When true, agent runs start with no tools (reduces prompt size; enable tools per-run or via UI). */
+    disableTools: z.boolean().optional(),
+    /** When tools are enabled, only send these tool names (reduces prompt size). Omit or empty = all tools. */
+    tools: z
+      .object({
+        allow: z.array(z.string().trim()).optional(),
+        /** Send a single invoke_tool wrapper instead of full schemas (saves tokens on small context). Default true for LiteClaw. */
+        compactSchema: z.boolean().optional().default(true),
+      })
+      .strict()
+      .optional(),
     bootstrapMaxChars: z.number().int().positive().optional(),
     bootstrapTotalMaxChars: z.number().int().positive().optional(),
     userTimezone: z.string().optional(),
@@ -42,7 +53,9 @@ export const AgentDefaultsSchema = z
     envelopeTimestamp: z.union([z.literal("on"), z.literal("off")]).optional(),
     envelopeElapsed: z.union([z.literal("on"), z.literal("off")]).optional(),
     contextTokens: z.number().int().positive().optional(),
-    promptMode: z.union([z.literal("full"), z.literal("lite"), z.literal("minimal"), z.literal("none")]).optional(),
+    promptMode: z
+      .union([z.literal("full"), z.literal("lite"), z.literal("minimal"), z.literal("none")])
+      .optional(),
     cliBackends: z.record(z.string(), CliBackendSchema).optional(),
     memorySearch: MemorySearchSchema,
     contextPruning: z
@@ -124,7 +137,7 @@ export const AgentDefaultsSchema = z
     blockStreamingChunk: BlockStreamingChunkSchema.optional(),
     blockStreamingCoalesce: BlockStreamingCoalesceSchema.optional(),
     humanDelay: HumanDelaySchema.optional(),
-    timeoutSeconds: z.number().int().positive().optional(),
+    timeoutSeconds: z.number().int().nonnegative().optional(),
     mediaMaxMb: z.number().positive().optional(),
     imageMaxDimensionPx: z.number().int().positive().optional(),
     typingIntervalSeconds: z.number().int().positive().optional(),

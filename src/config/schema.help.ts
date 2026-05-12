@@ -693,6 +693,14 @@ export const FIELD_HELP: Record<string, string> = {
     "Default workspace path exposed to agent runtime tools for filesystem context and repo-aware behavior. Set this explicitly when running from wrappers so path resolution stays deterministic.",
   "agents.defaults.bootstrapMaxChars":
     "Max characters of each workspace bootstrap file injected into the system prompt before truncation (default: 20000).",
+  "agents.defaults.disableTools":
+    "When true, agent runs start with no tools (reduces prompt size for local/Ollama; enable tools per-run or via UI when needed).",
+  "agents.defaults.tools":
+    "When tools are enabled, restrict which tools are sent to the model (reduces prompt size).",
+  "agents.defaults.tools.allow":
+    "List of tool names to send when tools are on. Omit or empty = send all tools. Used with web UI tool toggles.",
+  "agents.defaults.tools.compactSchema":
+    "When true, send a single invoke_tool schema instead of full schemas for each tool (saves ~15k–25k tokens on small context).",
   "agents.defaults.bootstrapTotalMaxChars":
     "Max total characters across all injected workspace bootstrap files (default: 150000).",
   "agents.defaults.repoRoot":

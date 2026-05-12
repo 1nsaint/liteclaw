@@ -7,18 +7,4 @@ read_when:
 
 # TOOLS.md - User Tool Notes (editable)
 
-This file is for _your_ notes about external tools and conventions.
-It does not define which tools exist; OpenClaw provides built-in tools internally.
-
-## Examples
-
-### imsg
-
-- Send an iMessage/SMS: describe who/what, confirm before sending.
-- Prefer short messages; avoid sending secrets.
-
-### sag
-
-- Text-to-speech: specify voice, target speaker/room, and whether to stream.
-
-Add whatever else you want the assistant to know about your local toolchain.
+Your notes about external tools and conventions (not the list of tools — that's built-in). e.g. imsg: confirm before sending; sag: voice/speaker. Update as you go.

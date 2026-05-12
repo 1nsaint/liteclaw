@@ -148,6 +148,9 @@ export async function createGatewayRuntimeState(params: {
         bindHost: host,
         port: params.port,
       });
+      if (httpServers.length === 0) {
+        params.log.info(`gateway HTTP listening on ${host}:${params.port} (Control UI ready)`);
+      }
       httpServers.push(httpServer);
       httpBindHosts.push(host);
     } catch (err) {

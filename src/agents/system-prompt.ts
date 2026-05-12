@@ -262,7 +262,8 @@ export function buildAgentSystemPrompt(params: {
     ls: "List directory contents",
     exec: "Run shell commands (pty available for TTY-required CLIs)",
     process: "Manage background exec sessions",
-    web_search: "Search the web (Brave API)",
+    web_search:
+      "Search the web for current info (weather, news, facts); use for live data like weather in a place.",
     web_fetch: "Fetch and extract readable content from a URL",
     // Channel docking: add login tools here when a channel needs interactive linking.
     browser: "Control web browser",
@@ -390,7 +391,7 @@ export function buildAgentSystemPrompt(params: {
   const runtimeCapabilitiesLower = new Set(runtimeCapabilities.map((cap) => cap.toLowerCase()));
   const inlineButtonsEnabled = runtimeCapabilitiesLower.has("inlinebuttons");
   const messageChannelOptions = listDeliverableMessageChannels().join("|");
-  const promptMode = params.promptMode ?? "full";
+  const promptMode = params.promptMode ?? "lite";
   const isLite = promptMode === "lite";
   const isMinimal = promptMode === "minimal" || promptMode === "none";
   const sandboxContainerWorkspace = params.sandboxInfo?.containerWorkspaceDir?.trim();
@@ -433,9 +434,12 @@ export function buildAgentSystemPrompt(params: {
   const lines = [
     "You are a personal assistant running inside OpenClaw.",
     "",
+    'Reply only with your actual response to the user. Do not output your internal checklist, plan, or meta-notes (e.g. "Need to read SOUL.md, USER.md, memory files? none exist. HEARTBEAT empty. Just greet."). If you would greet, greet; if you would answer, answer. Never show the user your reasoning about what to do—only the result.',
+    "",
     "## Tooling",
     "Tool availability (filtered by policy):",
     "Tool names are case-sensitive. Call tools exactly as listed.",
+    "When web_search is listed, use it for weather, current events, or any question needing up-to-date information.",
     toolLines.length > 0
       ? toolLines.join("\n")
       : [

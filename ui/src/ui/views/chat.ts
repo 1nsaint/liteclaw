@@ -44,6 +44,8 @@ export type ChatProps = {
   messages: unknown[];
   toolMessages: unknown[];
   stream: string | null;
+  /** Streaming thinking (e.g. GPT-OSS) to show while waiting for reply. */
+  streamThinking: string | null;
   streamStartedAt: number | null;
   assistantAvatarUrl?: string | null;
   draft: string;
@@ -296,6 +298,7 @@ export function renderChat(props: ChatProps) {
               item.startedAt,
               props.onOpenSidebar,
               assistantIdentity,
+              showReasoning ? (item.thinking ?? null) : null,
             );
           }
 
@@ -578,12 +581,13 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
 
   if (props.stream !== null) {
     const key = `stream:${props.sessionKey}:${props.streamStartedAt ?? "live"}`;
-    if (props.stream.trim().length > 0) {
+    if (props.stream.trim().length > 0 || (props.streamThinking ?? "").trim().length > 0) {
       items.push({
         kind: "stream",
         key,
         text: props.stream,
         startedAt: props.streamStartedAt ?? Date.now(),
+        thinking: props.streamThinking ?? null,
       });
     } else {
       items.push({ kind: "reading-indicator", key });

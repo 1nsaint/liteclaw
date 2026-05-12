@@ -542,3 +542,16 @@ export function createOpenClawCodingTools(options?: {
   // on the wire and maps them back for tool dispatch.
   return withAbort;
 }
+
+/**
+ * Returns the list of built-in tool names (for UI allowlist / tool picker).
+ * Pass a valid workspace path so read/write tools can be instantiated.
+ */
+export function getBuiltInToolNames(workspaceDir: string): string[] {
+  try {
+    const tools = createOpenClawCodingTools({ workspaceDir });
+    return tools.map((t) => t.name).filter(Boolean);
+  } catch {
+    return [];
+  }
+}

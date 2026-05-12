@@ -1,1 +1,82 @@
-{"gateway":{"controlUi":{"dangerouslyAllowHostHeaderOriginFallback":true}},"agents":{"defaults":{"model":{"primary":"ollama/qwen3:14b-fast80"},"timeoutSeconds":300,"heartbeat":{"every":"0m"},"models":{"ollama/qwen3:14b-fast80":{},"ollama/mistral:7b-instruct":{},"ollama/glm-4.7-flash":{},"ollama/qwen3.5:27b-q4_K_M":{}}}},"models":{"providers":{"ollama":{"api":"ollama","baseUrl":"http://host.docker.internal:11434"}}}}
+{
+  "gateway": {
+    "controlUi": { "dangerouslyAllowHostHeaderOriginFallback": true }
+  },
+  "models": {
+    "providers": {
+      "ollama": {
+        "api": "ollama",
+        "baseUrl": "http://192.168.0.146:11434",
+        "models": [
+          {
+            "id": "gemma4:26b",
+            "name": "Gemma 4 26B (default)",
+            "reasoning": false,
+            "input": ["text"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 32768,
+            "maxTokens": 32768,
+            "compat": {}
+          },
+          {
+            "id": "qwen3.6-moe",
+            "name": "Qwen3.6 MoE (reasoning / tools)",
+            "reasoning": true,
+            "input": ["text"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 32768,
+            "maxTokens": 32768,
+            "compat": {}
+          },
+          {
+            "id": "gemma4:31b",
+            "name": "Gemma 4 31B (max quality, slow)",
+            "reasoning": false,
+            "input": ["text"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 32768,
+            "maxTokens": 32768,
+            "compat": {}
+          },
+          {
+            "id": "gemma4:e4b-it-q8_0",
+            "name": "Gemma 4 E4B Q8 (routing / classification)",
+            "reasoning": false,
+            "input": ["text"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 8192,
+            "maxTokens": 8192,
+            "compat": {}
+          },
+          {
+            "id": "gemma4:e2b",
+            "name": "Gemma 4 E2B (tiny / fast)",
+            "reasoning": false,
+            "input": ["text"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 8192,
+            "maxTokens": 8192,
+            "compat": {}
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": { "primary": "ollama/gemma4:26b" },
+      "promptMode": "lite",
+      "timeoutSeconds": 0,
+      "tools": { "compactSchema": true },
+      "heartbeat": { "every": "0m" },
+      "models": {
+        "ollama/gemma4:26b": {},
+        "ollama/qwen3.6-moe": {},
+        "ollama/gemma4:31b": {},
+        "ollama/gemma4:e4b-it-q8_0": {},
+        "ollama/gemma4:e2b": {}
+      }
+    }
+  },
+  "tools": { "web": { "search": { "enabled": true } } }
+}

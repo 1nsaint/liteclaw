@@ -598,6 +598,7 @@ export async function runEmbeddedPiAgent(
             prompt,
             images: params.images,
             disableTools: params.disableTools,
+            toolsAllow: params.toolsAllow,
             provider,
             modelId,
             model,

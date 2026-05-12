@@ -128,7 +128,8 @@ export function renderAgentTools(params: {
         <div>
           <div class="card-title">Tool Access</div>
           <div class="card-sub">
-            Profile + per-tool overrides for this agent.
+            Profile sets the baseline; toggles add or remove tools. Save to apply.
+            Disabling a tool (e.g. TTS) removes it from the prompt.
             <span class="mono">${enabledCount}/${toolIds.length}</span> enabled.
           </div>
         </div>
@@ -165,7 +166,7 @@ export function renderAgentTools(params: {
         !params.configForm
           ? html`
               <div class="callout info" style="margin-top: 12px">
-                Load the gateway config to adjust tool profiles.
+                Load the gateway config (Config tab) to adjust tool profiles and presets.
               </div>
             `
           : nothing
@@ -174,7 +175,9 @@ export function renderAgentTools(params: {
         hasAgentAllow
           ? html`
               <div class="callout info" style="margin-top: 12px">
-                This agent is using an explicit allowlist in config. Tool overrides are managed in the Config tab.
+                This agent uses an explicit <span class="mono">tools.allow</span> list in config, so presets and
+                toggles are read-only. To use presets and toggles, remove
+                <span class="mono">agents.list[].tools.allow</span> for this agent in the Config tab.
               </div>
             `
           : nothing

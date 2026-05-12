@@ -1,6 +1,6 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import { CURRENT_SESSION_VERSION } from "@mariozechner/pi-coding-agent";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../../agents/defaults.js";
@@ -10,8 +10,8 @@ import { dispatchInboundMessage } from "../../auto-reply/dispatch.js";
 import { createReplyDispatcher } from "../../auto-reply/reply/reply-dispatcher.js";
 import type { MsgContext } from "../../auto-reply/templating.js";
 import { createReplyPrefixOptions } from "../../channels/reply-prefix.js";
-import { resolveSessionFilePath, updateSessionStore } from "../../config/sessions.js";
 import { clearConfigCache, loadConfig, writeConfigFile } from "../../config/config.js";
+import { resolveSessionFilePath, updateSessionStore } from "../../config/sessions.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import {
   stripInlineDirectiveTagsForDisplay,
@@ -697,6 +697,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       }>;
       timeoutMs?: number;
       idempotencyKey: string;
+      enabledTools?: string[];
     };
     const sanitizedMessageResult = sanitizeChatSendMessageInput(p.message);
     if (!sanitizedMessageResult.ok) {
@@ -813,9 +814,7 @@ export const chatHandlers: GatewayRequestHandlers = {
         storePath
       ) {
         const catalog = await context.loadGatewayModelCatalog();
-        const ollamaOnly = catalog.filter(
-          (m) => m.provider.toLowerCase().trim() === "ollama",
-        );
+        const ollamaOnly = catalog.filter((m) => m.provider.toLowerCase().trim() === "ollama");
         if (ollamaOnly.length > 0) {
           const first = ollamaOnly[0];
           const primaryRef = `ollama/${first.id}`;
@@ -836,16 +835,12 @@ export const chatHandlers: GatewayRequestHandlers = {
             await writeConfigFile({ ...currentCfg, agents: nextAgents });
             clearConfigCache();
           } catch (e) {
-            context.logGateway.warn(
-              `Could not persist Ollama default model: ${formatForLog(e)}`,
-            );
+            context.logGateway.warn(`Could not persist Ollama default model: ${formatForLog(e)}`);
           }
           // Patch session store so this request uses Ollama (normalized key for reply lookup).
           const normalizedKey = sessionKey.trim().toLowerCase();
           await updateSessionStore(storePath, (store) => {
-            const existingKey = Object.keys(store).find(
-              (k) => k.toLowerCase() === normalizedKey,
-            );
+            const existingKey = Object.keys(store).find((k) => k.toLowerCase() === normalizedKey);
             const existing = existingKey ? store[existingKey] : undefined;
             const next = existing
               ? {
@@ -935,8 +930,14 @@ export const chatHandlers: GatewayRequestHandlers = {
           runId: clientRunId,
           abortSignal: abortController.signal,
           images: parsedImages.length > 0 ? parsedImages : undefined,
+          enabledTools: p.enabledTools?.length ? p.enabledTools : undefined,
           onAgentRunStart: (runId) => {
             agentRunStarted = true;
+            // Register run so agent events (e.g. thinking, assistant) are mapped to this chat session.
+            context.addChatRun(runId, {
+              sessionKey: rawSessionKey,
+              clientRunId,
+            });
             const connId = typeof client?.connId === "string" ? client.connId : undefined;
             const wantsToolEvents = hasGatewayClientCap(
               client?.connect?.caps,

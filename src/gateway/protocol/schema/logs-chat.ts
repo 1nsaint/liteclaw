@@ -40,6 +40,8 @@ export const ChatSendParamsSchema = Type.Object(
     attachments: Type.Optional(Type.Array(Type.Unknown())),
     timeoutMs: Type.Optional(Type.Integer({ minimum: 0 })),
     idempotencyKey: NonEmptyString,
+    /** When tools are enabled, only send these tool names (reduces prompt size). Used by web UI. */
+    enabledTools: Type.Optional(Type.Array(Type.String())),
   },
   { additionalProperties: false },
 );

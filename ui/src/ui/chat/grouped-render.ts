@@ -76,12 +76,24 @@ export function renderStreamingGroup(
   startedAt: number,
   onOpenSidebar?: (content: string) => void,
   assistant?: AssistantIdentity,
+  thinking?: string | null,
 ) {
   const timestamp = new Date(startedAt).toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
   });
   const name = assistant?.name ?? "Assistant";
+  const content: Array<{ type: "thinking"; thinking: string } | { type: "text"; text: string }> =
+    [];
+  if (thinking?.trim()) {
+    content.push({ type: "thinking", thinking: thinking.trim() });
+  }
+  if (text) {
+    content.push({ type: "text", text });
+  }
+  if (content.length === 0) {
+    content.push({ type: "text", text: "" });
+  }
 
   return html`
     <div class="chat-group assistant">
@@ -90,10 +102,10 @@ export function renderStreamingGroup(
         ${renderGroupedMessage(
           {
             role: "assistant",
-            content: [{ type: "text", text }],
+            content,
             timestamp: startedAt,
           },
-          { isStreaming: true, showReasoning: false },
+          { isStreaming: true, showReasoning: Boolean(thinking?.trim()) },
           onOpenSidebar,
         )}
         <div class="chat-group-footer">
@@ -261,21 +273,26 @@ function renderGroupedMessage(
     return html`${toolCards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}`;
   }
 
-  if (!markdown && !hasToolCards && !hasImages) {
+  if (!markdown && !hasToolCards && !hasImages && !reasoningMarkdown) {
     return nothing;
   }
+
+  const thinkingBlock = reasoningMarkdown
+    ? opts.isStreaming
+      ? html`<div class="chat-thinking chat-thinking--streaming">${unsafeHTML(
+          toSanitizedMarkdownHtml(reasoningMarkdown),
+        )}</div>`
+      : html`<details class="chat-thinking-details" data-state="collapsed">
+          <summary class="chat-thinking-summary">Thinking</summary>
+          <div class="chat-thinking">${unsafeHTML(toSanitizedMarkdownHtml(reasoningMarkdown))}</div>
+        </details>`
+    : nothing;
 
   return html`
     <div class="${bubbleClasses}">
       ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
       ${renderMessageImages(images)}
-      ${
-        reasoningMarkdown
-          ? html`<div class="chat-thinking">${unsafeHTML(
-              toSanitizedMarkdownHtml(reasoningMarkdown),
-            )}</div>`
-          : nothing
-      }
+      ${thinkingBlock}
       ${
         markdown
           ? html`<div class="chat-text" dir="${detectTextDirection(markdown)}">${unsafeHTML(toSanitizedMarkdownHtml(markdown))}</div>`

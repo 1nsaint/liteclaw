@@ -308,10 +308,7 @@ function shortenToolDescription(description: string, maxChars: number): string {
   return trimmed.slice(0, Math.max(0, maxChars - 3)).trim() + "...";
 }
 
-function extractOllamaTools(
-  tools: Tool[] | undefined,
-  contextWindowTokens?: number,
-): OllamaTool[] {
+function extractOllamaTools(tools: Tool[] | undefined, contextWindowTokens?: number): OllamaTool[] {
   if (!tools || !Array.isArray(tools)) {
     return [];
   }
@@ -325,10 +322,7 @@ function extractOllamaTools(
     }
     let description = typeof tool.description === "string" ? tool.description : "";
     if (shortenDescriptions && description) {
-      description = shortenToolDescription(
-        description,
-        OLLAMA_TOOL_DESC_MAX_CHARS_SMALL_CTX,
-      );
+      description = shortenToolDescription(description, OLLAMA_TOOL_DESC_MAX_CHARS_SMALL_CTX);
     }
     result.push({
       type: "function",
@@ -460,16 +454,16 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
           context.systemPrompt,
         );
 
-        const ollamaTools = extractOllamaTools(
-          context.tools,
-          model.contextWindow ?? undefined,
-        );
+        const ollamaTools = extractOllamaTools(context.tools, model.contextWindow ?? undefined);
 
         // Ollama defaults to num_ctx=4096 which is too small for large
         // system prompts + many tool definitions. Use model's contextWindow,
         // but keep the fallback conservative for smaller-memory hosts.
         const ollamaOptions: Record<string, unknown> = {
           num_ctx: model.contextWindow ?? 32_768,
+          // Limit GPU layers so the rest run on CPU; avoids 100% GPU locking up the system (CPU stuck at 500MHz).
+          // 6 layers ≈ 70% CPU / 30% GPU for a 20-layer model. Env OLLAMA_NUM_GPU often not applied to runner.
+          num_gpu: 6,
         };
         if (typeof options?.temperature === "number") {
           ollamaOptions.temperature = options.temperature;
@@ -485,7 +479,28 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
           ...(ollamaTools.length > 0 ? { tools: ollamaTools } : {}),
           options: ollamaOptions,
         };
-        log.info(`Ollama request: model=${model.id} messages=${ollamaMessages.length}`);
+        // GPT-OSS: first token can take minutes; "low" thinking gets response sooner (top-level think)
+        if (model.id.toLowerCase().includes("gpt-oss")) {
+          (body as unknown as Record<string, unknown>).think = "low";
+        }
+        const bodyJson = JSON.stringify(body);
+        const bodyBytes = Buffer.byteLength(bodyJson, "utf8");
+        const firstMsg = ollamaMessages[0];
+        const lastMsg = ollamaMessages[ollamaMessages.length - 1];
+        const bodyRec = body as unknown as Record<string, unknown>;
+        const thinkRaw = bodyRec["think"];
+        const thinkLog =
+          thinkRaw === undefined || thinkRaw === null
+            ? "none"
+            : typeof thinkRaw === "string" ||
+                typeof thinkRaw === "number" ||
+                typeof thinkRaw === "boolean"
+              ? String(thinkRaw)
+              : JSON.stringify(thinkRaw);
+        log.info(
+          `Ollama request: model=${model.id} messages=${ollamaMessages.length} bodyBytes=${bodyBytes} num_ctx=${JSON.stringify(ollamaOptions.num_ctx)} num_gpu=${JSON.stringify(ollamaOptions.num_gpu)} think=${thinkLog} tools=${ollamaTools.length} ` +
+            `firstMsg.role=${firstMsg?.role ?? "?"} lastMsg.role=${lastMsg?.role ?? "?"}`,
+        );
 
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
@@ -495,16 +510,51 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
           headers.Authorization = `Bearer ${options.apiKey}`;
         }
 
-        const response = await fetch(chatUrl, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(body),
-          signal: options?.signal,
-        });
+        // Fail fast if Ollama doesn't respond (e.g. unreachable or overloaded)
+        const fetchTimeoutMs = 300_000;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(
+          () =>
+            controller.abort(new Error(`Ollama did not respond within ${fetchTimeoutMs / 1000}s`)),
+          fetchTimeoutMs,
+        );
+        if (options?.signal) {
+          if (options.signal.aborted) {
+            clearTimeout(timeoutId);
+            controller.abort(options.signal.reason);
+          } else {
+            options.signal.addEventListener(
+              "abort",
+              () => {
+                clearTimeout(timeoutId);
+                controller.abort(options.signal!.reason);
+              },
+              { once: true },
+            );
+          }
+        }
+        const fetchSignal = controller.signal;
+
+        let response: Response;
+        try {
+          response = await fetch(chatUrl, {
+            method: "POST",
+            headers,
+            body: bodyJson,
+            signal: fetchSignal,
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
+
+        log.info(`Ollama response: status=${response!.status} model=${model.id}`);
 
         if (!response.ok) {
           const errorText = await response.text().catch(() => "unknown error");
-          log.warn(`Ollama API error: url=${chatUrl} status=${response.status} body=${errorText.slice(0, 200)}`);
+          // Log full error body so we can see exactly what Ollama returned (e.g. 500 message).
+          log.warn(
+            `Ollama API error: url=${chatUrl} status=${response.status} bodyLen=${errorText.length} body=${errorText.slice(0, 1500)}`,
+          );
           throw new Error(`Ollama API error ${response.status}: ${errorText}`);
         }
 
@@ -513,8 +563,64 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
         }
 
         const reader = response.body.getReader();
+
+        // Upstream-style: buffer full response, single "done" with one text block (no streaming, no thinking UI).
+        // Matches official openclaw/openclaw — no thinking leak possible. Set OPENCLAW_OLLAMA_UPSTREAM_STYLE=1 to use.
+        const upstreamStyle =
+          process.env.OPENCLAW_OLLAMA_UPSTREAM_STYLE === "1" ||
+          process.env.OPENCLAW_OLLAMA_UPSTREAM_STYLE === "true";
+        if (upstreamStyle) {
+          let accumulatedContent = "";
+          const accumulatedToolCalls: OllamaToolCall[] = [];
+          let finalResponse: OllamaChatResponse | undefined;
+          for await (const chunk of parseNdjsonStream(reader)) {
+            if (chunk.message?.content) {
+              accumulatedContent += chunk.message.content;
+            } else if (chunk.message?.reasoning) {
+              accumulatedContent += chunk.message.reasoning;
+            } else if (typeof (chunk.message as { thinking?: string })?.thinking === "string") {
+              accumulatedContent += (chunk.message as { thinking: string }).thinking;
+            }
+            if (chunk.message?.tool_calls) {
+              accumulatedToolCalls.push(...chunk.message.tool_calls);
+            }
+            if (chunk.done) {
+              finalResponse = chunk;
+              break;
+            }
+          }
+          if (!finalResponse) {
+            throw new Error("Ollama API stream ended without a final response");
+          }
+          finalResponse.message.content = accumulatedContent;
+          if (accumulatedToolCalls.length > 0) {
+            finalResponse.message.tool_calls = accumulatedToolCalls;
+          }
+          const assistantMessage = buildAssistantMessage(finalResponse, {
+            api: model.api,
+            provider: model.provider,
+            id: model.id,
+          });
+          const reason: Extract<StopReason, "stop" | "length" | "toolUse"> =
+            assistantMessage.stopReason === "toolUse" ? "toolUse" : "stop";
+          stream.push({ type: "done", reason, message: assistantMessage });
+          return;
+        }
+
         let accumulatedContent = "";
         let accumulatedReasoning = "";
+        /** Reply-only: content with any leading reasoning stripped so it never leaks into the reply. */
+        const stripReasoningFromContent = (content: string, reasoning: string): string => {
+          const r = reasoning.trimEnd();
+          if (!r || !content) {
+            return content;
+          }
+          if (content.startsWith(r)) {
+            return content.slice(r.length).trimStart();
+          }
+          return content;
+        };
+        let replyContent = "";
         const accumulatedToolCalls: OllamaToolCall[] = [];
         let finalResponse: OllamaChatResponse | undefined;
 
@@ -542,8 +648,18 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
         let hasPushedThinkingStart = false;
         let hasPushedThinkingEnd = false;
         let hasPushedTextStart = false;
+        let prevReplyLength = 0;
+        let firstChunkLogged = false;
 
         for await (const chunk of parseNdjsonStream(reader)) {
+          if (!firstChunkLogged) {
+            firstChunkLogged = true;
+            const chunkPreview =
+              typeof chunk === "object" && chunk !== null
+                ? JSON.stringify(chunk).slice(0, 200)
+                : String(chunk).slice(0, 200);
+            log.info(`Ollama first chunk: model=${model.id} preview=${chunkPreview}`);
+          }
           try {
             const msg = chunk.message;
             const reasoningDelta =
@@ -583,13 +699,16 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
                 });
               }
               accumulatedContent += contentDelta;
+              replyContent = stripReasoningFromContent(accumulatedContent, accumulatedReasoning);
               const textBlockIndex = hasPushedThinkingStart ? 1 : 0;
+              const replyDelta = replyContent.slice(prevReplyLength);
               if (!hasPushedTextStart) {
                 hasPushedTextStart = true;
+                prevReplyLength = replyContent.length;
                 if (textBlockIndex === 0) {
-                  output.content = [{ type: "text", text: accumulatedContent }];
+                  output.content = [{ type: "text", text: replyContent }];
                 } else {
-                  output.content[1] = { type: "text", text: accumulatedContent };
+                  output.content[1] = { type: "text", text: replyContent };
                 }
                 stream.push({
                   type: "text_start",
@@ -597,13 +716,13 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
                   partial: output,
                 });
               } else {
-                (
-                  output.content[textBlockIndex] as { type: "text"; text: string }
-                ).text = accumulatedContent;
+                (output.content[textBlockIndex] as { type: "text"; text: string }).text =
+                  replyContent;
+                prevReplyLength = replyContent.length;
                 stream.push({
                   type: "text_delta",
                   contentIndex: textBlockIndex,
-                  delta: contentDelta,
+                  delta: replyDelta,
                   partial: output,
                 });
               }
@@ -640,27 +759,89 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
           });
         }
         if (hasPushedTextStart) {
+          replyContent = stripReasoningFromContent(accumulatedContent, accumulatedReasoning);
           const textBlockIndex = hasPushedThinkingStart ? 1 : 0;
-          (
-            output.content[textBlockIndex] as { type: "text"; text: string }
-          ).text = accumulatedContent;
+          (output.content[textBlockIndex] as { type: "text"; text: string }).text = replyContent;
           stream.push({
             type: "text_end",
             contentIndex: textBlockIndex,
-            content: accumulatedContent,
+            content: replyContent,
             partial: output,
           });
         }
 
-        finalResponse.message.content = accumulatedContent;
-        if (accumulatedReasoning && !accumulatedContent) {
-          finalResponse.message.content = accumulatedReasoning;
+        // Reply is only the model's content stream—never mix in reasoning (thinking is a separate field).
+        let finalContent =
+          replyContent || stripReasoningFromContent(accumulatedContent, accumulatedReasoning);
+
+        // Generic dedupe: (1) exact duplicate — same text twice; (2) "partial then full" — model echoes then restarts with common openings (greetings, Sure thing, Got it, etc.).
+        const len = finalContent.length;
+        if (len >= 2 && len % 2 === 0) {
+          const half = len / 2;
+          if (finalContent.slice(0, half) === finalContent.slice(half)) {
+            finalContent = finalContent.slice(0, half);
+          }
         }
+        const restartPhrases =
+          /\b(Hey\s*!?|Hi\s+there\s*!?|Hello\s*!?|Glad\s+you're|What\s+can\s+I\s+help|I\s+don't\s+have|Sure\s*,?\s*thing|Got\s+it|Okay,?|So,?)\b/gi;
+        let lastRestart: RegExpExecArray | null = null;
+        let restartM: RegExpExecArray | null;
+        while ((restartM = restartPhrases.exec(finalContent)) !== null) {
+          lastRestart = restartM;
+        }
+        if (lastRestart && lastRestart.index > 0) {
+          const single = finalContent.slice(lastRestart.index);
+          if (single.length > 0) {
+            finalContent = single;
+          }
+        }
+
+        finalResponse.message.content = finalContent;
         if (accumulatedToolCalls.length > 0) {
           finalResponse.message.tool_calls = accumulatedToolCalls;
         }
 
-        const assistantMessage = buildAssistantMessage(finalResponse, modelInfo);
+        // Build done message with thinking and text as separate blocks so the UI can show thinking (grey, collapsible) and reply separately.
+        const modelInfoLocal = { api: model.api, provider: model.provider, id: model.id };
+        const doneUsage: Usage = {
+          input: finalResponse.prompt_eval_count ?? 0,
+          output: finalResponse.eval_count ?? 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: (finalResponse.prompt_eval_count ?? 0) + (finalResponse.eval_count ?? 0),
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        };
+        const hasToolCalls = accumulatedToolCalls.length > 0;
+        const stopReason: Extract<StopReason, "stop" | "length" | "toolUse"> = hasToolCalls
+          ? "toolUse"
+          : "stop";
+        const contentBlocks: Array<
+          { type: "thinking"; thinking: string } | TextContent | ToolCall
+        > = [];
+        if (accumulatedReasoning.trim()) {
+          contentBlocks.push({ type: "thinking", thinking: accumulatedReasoning.trim() });
+        }
+        if (finalContent) {
+          contentBlocks.push({ type: "text", text: finalContent });
+        }
+        for (const tc of accumulatedToolCalls) {
+          contentBlocks.push({
+            type: "toolCall",
+            id: `ollama_call_${randomUUID()}`,
+            name: tc.function.name,
+            arguments: tc.function.arguments,
+          });
+        }
+        const assistantMessage: AssistantMessage = {
+          role: "assistant",
+          content: contentBlocks.length > 0 ? contentBlocks : [{ type: "text", text: "" }],
+          stopReason,
+          api: modelInfoLocal.api,
+          provider: modelInfoLocal.provider,
+          model: modelInfoLocal.id,
+          usage: doneUsage,
+          timestamp: Date.now(),
+        };
 
         const reason: Extract<StopReason, "stop" | "length" | "toolUse"> =
           assistantMessage.stopReason === "toolUse" ? "toolUse" : "stop";
@@ -672,6 +853,7 @@ export function createOllamaStreamFn(baseUrl: string): StreamFn {
         });
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
+        log.warn(`Ollama request failed: model=${model.id} error=${errorMessage}`);
         stream.push({
           type: "error",
           reason: "error",

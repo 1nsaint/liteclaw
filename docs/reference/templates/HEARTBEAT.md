@@ -5,8 +5,8 @@ read_when:
   - Bootstrapping a workspace manually
 ---
 
-# HEARTBEAT.md
+# HEARTBEAT
 
-# Keep this file empty (or with only comments) to skip heartbeat API calls.
+Empty = skip. Add a short checklist for periodic checks. If nothing to do, reply `HEARTBEAT_OK`.
 
-# Add tasks below when you want the agent to check something periodically.
+- [ ] _(optional)_

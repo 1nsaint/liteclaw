@@ -1,4 +1,4 @@
-import { extractText } from "../chat/message-extract.ts";
+import { extractText, extractThinking } from "../chat/message-extract.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
 import type { ChatAttachment } from "../ui-types.ts";
 import { generateUUID } from "../uuid.ts";
@@ -15,6 +15,8 @@ export type ChatState = {
   chatAttachments: ChatAttachment[];
   chatRunId: string | null;
   chatStream: string | null;
+  /** Accumulated thinking from streaming (e.g. GPT-OSS) for live display. */
+  chatStreamThinking: string | null;
   chatStreamStartedAt: number | null;
   lastError: string | null;
 };
@@ -172,6 +174,7 @@ export async function sendChatMessage(
   const runId = generateUUID();
   state.chatRunId = runId;
   state.chatStream = "";
+  state.chatStreamThinking = null;
   state.chatStreamStartedAt = now;
 
   // Convert attachments to API format
@@ -204,6 +207,7 @@ export async function sendChatMessage(
     const error = String(err);
     state.chatRunId = null;
     state.chatStream = null;
+    state.chatStreamThinking = null;
     state.chatStreamStartedAt = null;
     state.lastError = error;
     state.chatMessages = [
@@ -260,19 +264,22 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
   }
 
   if (payload.state === "delta") {
-    const next = extractText(payload.message);
-    if (typeof next === "string") {
+    const nextText = extractText(payload.message);
+    if (typeof nextText === "string") {
       const current = state.chatStream ?? "";
-      if (!current || next.length >= current.length) {
-        state.chatStream = next;
+      if (!current || nextText.length >= current.length) {
+        state.chatStream = nextText;
       }
     }
+    const nextThinking = extractThinking(payload.message);
+    state.chatStreamThinking = typeof nextThinking === "string" ? nextThinking : null;
   } else if (payload.state === "final") {
     const finalMessage = normalizeFinalAssistantMessage(payload.message);
     if (finalMessage) {
       state.chatMessages = [...state.chatMessages, finalMessage];
     }
     state.chatStream = null;
+    state.chatStreamThinking = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
   } else if (payload.state === "aborted") {
@@ -293,10 +300,12 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       }
     }
     state.chatStream = null;
+    state.chatStreamThinking = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
   } else if (payload.state === "error") {
     state.chatStream = null;
+    state.chatStreamThinking = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
     state.lastError = payload.errorMessage ?? "chat error";

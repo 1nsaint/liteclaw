@@ -143,6 +143,8 @@ export function createChatRunRegistry(): ChatRunRegistry {
 export type ChatRunState = {
   registry: ChatRunRegistry;
   buffers: Map<string, string>;
+  /** Accumulated thinking text per client run (for streaming thinking in chat UI). */
+  thinkingBuffers: Map<string, string>;
   deltaSentAt: Map<string, number>;
   abortedRuns: Map<string, number>;
   clear: () => void;
@@ -151,12 +153,14 @@ export type ChatRunState = {
 export function createChatRunState(): ChatRunState {
   const registry = createChatRunRegistry();
   const buffers = new Map<string, string>();
+  const thinkingBuffers = new Map<string, string>();
   const deltaSentAt = new Map<string, number>();
   const abortedRuns = new Map<string, number>();
 
   const clear = () => {
     registry.clear();
     buffers.clear();
+    thinkingBuffers.clear();
     deltaSentAt.clear();
     abortedRuns.clear();
   };
@@ -164,6 +168,7 @@ export function createChatRunState(): ChatRunState {
   return {
     registry,
     buffers,
+    thinkingBuffers,
     deltaSentAt,
     abortedRuns,
     clear,
@@ -283,24 +288,41 @@ export function createAgentEventHandler({
     sourceRunId: string,
     seq: number,
     text: string,
+    thinking?: string,
   ) => {
     const cleaned = stripInlineDirectiveTagsForDisplay(text).text;
-    if (!cleaned) {
+    if (!cleaned && !thinking) {
       return;
     }
-    if (isSilentReplyText(cleaned, SILENT_REPLY_TOKEN)) {
+    if (cleaned && isSilentReplyText(cleaned, SILENT_REPLY_TOKEN)) {
       return;
     }
-    chatRunState.buffers.set(clientRunId, cleaned);
-    if (shouldHideHeartbeatChatOutput(clientRunId, sourceRunId)) {
+    if (cleaned) {
+      chatRunState.buffers.set(clientRunId, cleaned);
+    }
+    if (shouldHideHeartbeatChatOutput(clientRunId, sourceRunId) && !thinking) {
       return;
     }
     const now = Date.now();
     const last = chatRunState.deltaSentAt.get(clientRunId) ?? 0;
-    if (now - last < 150) {
+    // Throttle text deltas only; always send thinking so reasoning streams live like in the terminal.
+    const throttleMs = 50;
+    if (now - last < throttleMs && !thinking) {
       return;
     }
     chatRunState.deltaSentAt.set(clientRunId, now);
+    const textContent = chatRunState.buffers.get(clientRunId) ?? cleaned ?? "";
+    const content: Array<{ type: "thinking"; thinking: string } | { type: "text"; text: string }> =
+      [];
+    if (thinking?.trim()) {
+      content.push({ type: "thinking", thinking: thinking.trim() });
+    }
+    if (textContent) {
+      content.push({ type: "text", text: textContent });
+    }
+    if (content.length === 0) {
+      return;
+    }
     const payload = {
       runId: clientRunId,
       sessionKey,
@@ -308,11 +330,12 @@ export function createAgentEventHandler({
       state: "delta" as const,
       message: {
         role: "assistant",
-        content: [{ type: "text", text: cleaned }],
+        content,
         timestamp: now,
       },
     };
-    broadcast("chat", payload, { dropIfSlow: true });
+    // Don't drop chat deltas so thinking and reply text always stream to the UI.
+    broadcast("chat", payload);
     nodeSendToSession(sessionKey, "chat", payload);
   };
 
@@ -335,19 +358,30 @@ export function createAgentEventHandler({
     const text = normalizedHeartbeatText.text.trim();
     const shouldSuppressSilent =
       normalizedHeartbeatText.suppress || isSilentReplyText(text, SILENT_REPLY_TOKEN);
+    const finalThinking = chatRunState.thinkingBuffers.get(clientRunId) ?? "";
     chatRunState.buffers.delete(clientRunId);
+    chatRunState.thinkingBuffers.delete(clientRunId);
     chatRunState.deltaSentAt.delete(clientRunId);
     if (jobState === "done") {
+      const content: Array<
+        { type: "thinking"; thinking: string } | { type: "text"; text: string }
+      > = [];
+      if (finalThinking.trim()) {
+        content.push({ type: "thinking", thinking: finalThinking.trim() });
+      }
+      if (text && !shouldSuppressSilent) {
+        content.push({ type: "text", text });
+      }
       const payload = {
         runId: clientRunId,
         sessionKey,
         seq,
         state: "final" as const,
         message:
-          text && !shouldSuppressSilent
+          content.length > 0
             ? {
                 role: "assistant",
-                content: [{ type: "text", text }],
+                content,
                 timestamp: Date.now(),
               }
             : undefined,
@@ -359,8 +393,7 @@ export function createAgentEventHandler({
     // If this was a bare /new or /reset run and the failure is an HTTP 404
     // (e.g. proxy or upstream returned 404), treat as success so the user
     // isn’t shown a raw 404 and can continue chatting.
-    const runCtx =
-      getAgentRunContext(clientRunId) ?? getAgentRunContext(sourceRunId);
+    const runCtx = getAgentRunContext(clientRunId) ?? getAgentRunContext(sourceRunId);
     const errStr = error != null ? formatForLog(error) : "";
     const is404Like =
       /HTTP\s+404|404\s+page\s+not\s+found/i.test(errStr) || /HTTP\s*404/i.test(errStr);
@@ -478,7 +511,26 @@ export function createAgentEventHandler({
         nodeSendToSession(sessionKey, "agent", isToolEvent ? toolPayload : agentPayload);
       }
       if (!isAborted && evt.stream === "assistant" && typeof evt.data?.text === "string") {
-        emitChatDelta(sessionKey, clientRunId, evt.runId, evt.seq, evt.data.text);
+        const currentThinking = chatRunState.thinkingBuffers.get(clientRunId) ?? "";
+        emitChatDelta(
+          sessionKey,
+          clientRunId,
+          evt.runId,
+          evt.seq,
+          evt.data.text,
+          currentThinking || undefined,
+        );
+      } else if (
+        !isAborted &&
+        evt.stream === "thinking" &&
+        typeof evt.data?.text === "string" &&
+        chatLink
+      ) {
+        const prev = chatRunState.thinkingBuffers.get(clientRunId) ?? "";
+        const next = prev ? `${prev}${evt.data.text}` : evt.data.text;
+        chatRunState.thinkingBuffers.set(clientRunId, next);
+        const currentText = chatRunState.buffers.get(clientRunId) ?? "";
+        emitChatDelta(sessionKey, clientRunId, evt.runId, evt.seq, currentText, next);
       } else if (!isAborted && (lifecyclePhase === "end" || lifecyclePhase === "error")) {
         if (chatLink) {
           const finished = chatRunState.registry.shift(evt.runId);
@@ -508,6 +560,7 @@ export function createAgentEventHandler({
         chatRunState.abortedRuns.delete(clientRunId);
         chatRunState.abortedRuns.delete(evt.runId);
         chatRunState.buffers.delete(clientRunId);
+        chatRunState.thinkingBuffers.delete(clientRunId);
         chatRunState.deltaSentAt.delete(clientRunId);
         if (chatLink) {
           chatRunState.registry.remove(evt.runId, clientRunId, sessionKey);
@@ -516,6 +569,7 @@ export function createAgentEventHandler({
     }
 
     if (lifecyclePhase === "end" || lifecyclePhase === "error") {
+      chatRunState.thinkingBuffers.delete(clientRunId);
       toolEventRecipients.markFinal(evt.runId);
       clearAgentRunContext(evt.runId);
       agentRunSeq.delete(evt.runId);

@@ -86,6 +86,7 @@ import {
   sanitizeToolsForGoogle,
 } from "../google.js";
 import { getDmHistoryLimitFromSessionKey, limitHistoryTurns } from "../history.js";
+import { createInvokeToolWrapper } from "../invoke-tool-wrapper.js";
 import { log } from "../logger.js";
 import { buildModelAliasLines } from "../model.js";
 import {
@@ -174,11 +175,11 @@ export async function resolvePromptBuildHookResult(params: {
   };
 }
 
-export function resolvePromptModeForSession(sessionKey?: string): "minimal" | "full" {
+export function resolvePromptModeForSession(sessionKey?: string): "minimal" | "full" | "lite" {
   if (!sessionKey) {
-    return "full";
+    return "lite";
   }
-  return isSubagentSessionKey(sessionKey) ? "minimal" : "full";
+  return isSubagentSessionKey(sessionKey) ? "minimal" : "lite";
 }
 
 export function resolveAttemptFsWorkspaceOnly(params: {
@@ -373,7 +374,20 @@ export async function runEmbeddedAttempt(
             params.requireExplicitMessageTarget ?? isSubagentSessionKey(params.sessionKey),
           disableMessageTool: params.disableMessageTool,
         });
-    const tools = sanitizeToolsForGoogle({ tools: toolsRaw, provider: params.provider });
+    const toolsFiltered =
+      params.toolsAllow && params.toolsAllow.length > 0
+        ? toolsRaw.filter((t) =>
+            params.toolsAllow!.some(
+              (a) => String(a).trim().toLowerCase() === String(t.name).trim().toLowerCase(),
+            ),
+          )
+        : toolsRaw;
+    const useCompactTools =
+      params.config?.agents?.defaults?.tools?.compactSchema !== false && toolsFiltered.length > 0;
+    const toolsForSession = useCompactTools
+      ? [createInvokeToolWrapper(toolsFiltered)]
+      : toolsFiltered;
+    const tools = sanitizeToolsForGoogle({ tools: toolsForSession, provider: params.provider });
     const allowedToolNames = collectAllowedToolNames({
       tools,
       clientTools: params.clientTools,
@@ -469,21 +483,11 @@ export async function runEmbeddedAttempt(
     });
     const isDefaultAgent = sessionAgentId === defaultAgentId;
     let promptMode = resolvePromptModeForSession(params.sessionKey);
-    const configuredPromptMode =
-      params.config?.agents?.defaults?.promptMode as
-        | "full"
-        | "lite"
-        | "minimal"
-        | "none"
-        | undefined;
+    const configuredPromptMode = params.config?.agents?.defaults?.promptMode;
     // Respect an explicit promptMode for main sessions, but always keep subagents on "minimal".
-    if (configuredPromptMode && promptMode === "full") {
-      const resolved: "full" | "minimal" =
-        configuredPromptMode === "none"
-          ? "full"
-          : configuredPromptMode === "lite"
-            ? "minimal"
-            : configuredPromptMode;
+    if (configuredPromptMode && (promptMode === "full" || promptMode === "lite")) {
+      const resolved: "full" | "lite" | "minimal" =
+        configuredPromptMode === "none" ? "full" : configuredPromptMode;
       promptMode = resolved;
     }
     const docsPath = await resolveOpenClawDocsPath({
@@ -517,7 +521,7 @@ export async function runEmbeddedAttempt(
       runtimeInfo,
       messageToolHints,
       sandboxInfo,
-      tools,
+      tools: toolsFiltered,
       modelAliasLines: buildModelAliasLines(params.config),
       userTimezone,
       userTime,

@@ -130,6 +130,13 @@ export type AgentDefaultsConfig = {
   repoRoot?: string;
   /** Skip bootstrap (BOOTSTRAP.md creation, etc.) for pre-configured deployments. */
   skipBootstrap?: boolean;
+  /** When true, agent runs start with no tools (reduces prompt size; enable per-run or via UI). */
+  disableTools?: boolean;
+  /** When tools are enabled, only send these tool names. Omit or empty = all tools. */
+  tools?: {
+    allow?: string[];
+    /** Send a single invoke_tool wrapper instead of full schemas (saves tokens). */ compactSchema?: boolean;
+  };
   /** Max chars for injected bootstrap files before truncation (default: 20000). */
   bootstrapMaxChars?: number;
   /** Max total chars across all injected bootstrap files (default: 150000). */

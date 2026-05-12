@@ -2,13 +2,43 @@
   "models": {
     "providers": {
       "ollama": {
-        "baseUrl": "http://host.docker.internal:11434",
+        "baseUrl": "http://192.168.0.146:11434",
         "apiKey": "ollama-local",
         "api": "ollama",
         "models": [
           {
-            "id": "qwen2.5:7b",
-            "name": "Qwen 2.5 7B",
+            "id": "gemma4:26b",
+            "name": "Gemma 4 26B (default)",
+            "reasoning": false,
+            "input": ["text"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 32768,
+            "maxTokens": 32768,
+            "compat": {}
+          },
+          {
+            "id": "qwen3.6-moe",
+            "name": "Qwen3.6 MoE",
+            "reasoning": true,
+            "input": ["text"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 32768,
+            "maxTokens": 32768,
+            "compat": {}
+          },
+          {
+            "id": "gemma4:31b",
+            "name": "Gemma 4 31B",
+            "reasoning": false,
+            "input": ["text"],
+            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "contextWindow": 32768,
+            "maxTokens": 32768,
+            "compat": {}
+          },
+          {
+            "id": "gemma4:e4b-it-q8_0",
+            "name": "Gemma 4 E4B Q8",
             "reasoning": false,
             "input": ["text"],
             "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
@@ -17,10 +47,10 @@
             "compat": {}
           },
           {
-            "id": "qwen3-vl:30b-a3b-thinking",
-            "name": "Qwen3 VL 30B Thinking",
-            "reasoning": true,
-            "input": ["text", "image"],
+            "id": "gemma4:e2b",
+            "name": "Gemma 4 E2B",
+            "reasoning": false,
+            "input": ["text"],
             "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
             "contextWindow": 8192,
             "maxTokens": 8192,
@@ -34,8 +64,8 @@
     "defaults": {
       "compaction": { "mode": "safeguard" },
       "model": {
-        "primary": "ollama/qwen3-vl:30b-a3b-thinking",
-        "fallbacks": ["ollama/qwen2.5:7b"]
+        "primary": "ollama/gemma4:26b",
+        "fallbacks": ["ollama/gemma4:e4b-it-q8_0", "ollama/gemma4:e2b"]
       }
     }
   }

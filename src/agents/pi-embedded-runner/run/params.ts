@@ -69,6 +69,8 @@ export type RunEmbeddedPiAgentParams = {
   clientTools?: ClientToolDefinition[];
   /** Disable built-in tools for this run (LLM-only mode). */
   disableTools?: boolean;
+  /** When tools are enabled, only send these tool names (reduces prompt size). Omit or empty = send all. */
+  toolsAllow?: string[];
   provider?: string;
   model?: string;
   authProfileId?: string;

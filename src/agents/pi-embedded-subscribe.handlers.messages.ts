@@ -109,10 +109,11 @@ export function handleMessageUpdate(
       delta: thinkingDelta,
       content: thinkingContent,
     });
-    if (ctx.state.streamReasoning) {
-      // Prefer full partial-message thinking when available; fall back to event payloads.
-      const partialThinking = extractAssistantThinking(msg);
-      ctx.emitReasoningStream(partialThinking || thinkingContent || thinkingDelta);
+    // Always emit so gateway can show thinking in web chat; onReasoningStream is for other consumers.
+    const partialThinking = extractAssistantThinking(msg);
+    const thinkingText = partialThinking || thinkingContent || thinkingDelta;
+    if (thinkingText) {
+      ctx.emitReasoningStream(thinkingText);
     }
     if (evtType === "thinking_end") {
       if (!ctx.state.reasoningStreamOpen) {

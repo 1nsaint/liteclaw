@@ -541,9 +541,6 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
   };
 
   const emitReasoningStream = (text: string) => {
-    if (!state.streamReasoning || !params.onReasoningStream) {
-      return;
-    }
     const formatted = formatReasoningMessage(text);
     if (!formatted) {
       return;
@@ -552,12 +549,11 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
       return;
     }
     // Compute delta: new text since the last emitted reasoning.
-    // Guard against non-prefix changes (e.g. trim/format altering earlier content).
     const prior = state.lastStreamedReasoning ?? "";
     const delta = formatted.startsWith(prior) ? formatted.slice(prior.length) : formatted;
     state.lastStreamedReasoning = formatted;
 
-    // Broadcast thinking event to WebSocket clients in real-time
+    // Always broadcast so gateway can show thinking in web chat (and other WS clients).
     emitAgentEvent({
       runId: params.runId,
       stream: "thinking",
@@ -567,9 +563,11 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
       },
     });
 
-    void params.onReasoningStream({
-      text: formatted,
-    });
+    if (state.streamReasoning && params.onReasoningStream) {
+      void params.onReasoningStream({
+        text: formatted,
+      });
+    }
   };
 
   const resetForCompactionRetry = () => {
