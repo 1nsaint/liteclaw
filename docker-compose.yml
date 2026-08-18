@@ -1,5 +1,4 @@
-# LiteClaw gateway (your fork of OpenClaw for self-hosted/Ollama).
-# Build from source, then run. Ollama on LAN (Jetson): explicit IP + port 11434.
+# LiteClaw gateway (OpenClaw fork). Primary LLM: Jetson llama.cpp (Qwen3.8) on :8080.
 services:
   liteclaw:
     build: .
@@ -13,14 +12,17 @@ services:
     environment:
       # So the gateway is reachable from host (pair TUI, browser)
       - OPENCLAW_GATEWAY_PORT=18789
-      # Ollama on Jetson (LAN); OPENCLAW_OLLAMA_BASE_URL overrides config if missing
+      # llama.cpp OpenAI-compatible on Jetson (Qwen3.8 bare-metal)
+      - OPENCLAW_LLAMACPP_BASE_URL=http://192.168.0.146:8080/v1
+      - LLAMACPP_API_KEY=sk-local
+      # Ollama kept as optional fallback when healthy again
       - OPENCLAW_OLLAMA_BASE_URL=http://192.168.0.146:11434
-      # Local Ollama has no real API key; any value registers the provider so the agent can run
       - OLLAMA_API_KEY=ollama-local
     # Override default loopback bind so host can connect (seed config allows Control UI)
     command: ["node", "openclaw.mjs", "gateway", "--allow-unconfigured", "--bind", "lan"]
     volumes:
-      - liteclaw-data:/home/node/.openclaw
+      # Gateway state (agents, sessions, config) — next to this compose file
+      - ./data:/home/node/.openclaw
     # Gateway does heavy async init before binding the port; mark healthy only when UI responds
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:18789/', r => { r.resume(); process.exit(r.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1));"]
@@ -28,6 +30,3 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
-volumes:
-  liteclaw-data: {}

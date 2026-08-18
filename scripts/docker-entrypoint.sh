@@ -1,8 +1,8 @@
 #!/bin/sh
-# Ensure .openclaw exists and config has Docker/Ollama defaults.
+# Ensure .openclaw exists and config has Docker/LLM defaults.
 # - If no config: copy seed (first run, new volume).
-# - If config exists: merge in seed defaults for Ollama and agent model so old
-#   volumes get Jetson Ollama URL and default model without losing token/pairing.
+# - If config exists: merge in seed defaults for llama.cpp / Ollama and agent model
+#   so old volumes get Jetson endpoints without losing token/pairing.
 set -e
 CONFIG="/home/node/.openclaw/openclaw.json"
 SEED="/app/docker-openclaw.seed.json"
@@ -11,7 +11,7 @@ mkdir -p /home/node/.openclaw
 if [ ! -f "$CONFIG" ]; then
   cp "$SEED" "$CONFIG"
 else
-  # Merge seed defaults into existing config so Ollama baseUrl and default model
+  # Merge seed defaults into existing config so LLM baseUrl and default model
   # are set even when volume was created from an older seed.
   # If existing config is invalid JSON, backup and use seed so container can start.
   node -e "
@@ -30,17 +30,20 @@ else
     }
     const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
     let changed = false;
-    if (seed.models?.providers?.ollama) {
+    const mergeProvider = (name) => {
+      const seedProv = seed.models?.providers?.[name];
+      if (!seedProv) return;
       cfg.models = cfg.models || {};
       cfg.models.providers = cfg.models.providers || {};
-      const seedOllama = seed.models.providers.ollama;
-      cfg.models.providers.ollama = {
-        ...(cfg.models.providers.ollama || {}),
-        baseUrl: seedOllama.baseUrl || cfg.models.providers.ollama?.baseUrl,
-        api: seedOllama.api || cfg.models.providers.ollama?.api || \"ollama\",
+      cfg.models.providers[name] = {
+        ...(cfg.models.providers[name] || {}),
+        ...seedProv,
+        models: seedProv.models || cfg.models.providers[name]?.models,
       };
       changed = true;
-    }
+    };
+    mergeProvider('llamacpp');
+    mergeProvider('ollama');
     if (seed.agents?.defaults?.model?.primary) {
       cfg.agents = cfg.agents || {};
       cfg.agents.defaults = cfg.agents.defaults || {};

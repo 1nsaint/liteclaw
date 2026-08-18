@@ -1,6 +1,8 @@
 {
   "gateway": {
-    "controlUi": { "dangerouslyAllowHostHeaderOriginFallback": true }
+    "controlUi": {
+      "dangerouslyAllowHostHeaderOriginFallback": true
+    }
   },
   "models": {
     "providers": {
@@ -13,7 +15,12 @@
             "name": "Gemma 4 26B (default)",
             "reasoning": false,
             "input": ["text"],
-            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
             "contextWindow": 32768,
             "maxTokens": 32768,
             "compat": {}
@@ -23,7 +30,12 @@
             "name": "Qwen3.6 MoE (reasoning / tools)",
             "reasoning": true,
             "input": ["text"],
-            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
             "contextWindow": 32768,
             "maxTokens": 32768,
             "compat": {}
@@ -33,7 +45,12 @@
             "name": "Gemma 4 31B (max quality, slow)",
             "reasoning": false,
             "input": ["text"],
-            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
             "contextWindow": 32768,
             "maxTokens": 32768,
             "compat": {}
@@ -43,7 +60,12 @@
             "name": "Gemma 4 E4B Q8 (routing / classification)",
             "reasoning": false,
             "input": ["text"],
-            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
             "contextWindow": 8192,
             "maxTokens": 8192,
             "compat": {}
@@ -53,8 +75,35 @@
             "name": "Gemma 4 E2B (tiny / fast)",
             "reasoning": false,
             "input": ["text"],
-            "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
             "contextWindow": 8192,
+            "maxTokens": 8192,
+            "compat": {}
+          }
+        ]
+      },
+      "llamacpp": {
+        "baseUrl": "http://192.168.0.146:8080/v1",
+        "apiKey": "sk-local",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "Qwen3.8-27B",
+            "name": "Qwen3.8 27B (llama.cpp)",
+            "reasoning": true,
+            "input": ["text"],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 131072,
             "maxTokens": 8192,
             "compat": {}
           }
@@ -64,19 +113,32 @@
   },
   "agents": {
     "defaults": {
-      "model": { "primary": "ollama/gemma4:26b" },
+      "model": {
+        "primary": "llamacpp/Qwen3.8-27B"
+      },
       "promptMode": "lite",
       "timeoutSeconds": 0,
-      "tools": { "compactSchema": true },
-      "heartbeat": { "every": "0m" },
+      "tools": {
+        "compactSchema": true
+      },
+      "heartbeat": {
+        "every": "0m"
+      },
       "models": {
         "ollama/gemma4:26b": {},
         "ollama/qwen3.6-moe": {},
         "ollama/gemma4:31b": {},
         "ollama/gemma4:e4b-it-q8_0": {},
-        "ollama/gemma4:e2b": {}
+        "ollama/gemma4:e2b": {},
+        "llamacpp/Qwen3.8-27B": {}
       }
     }
   },
-  "tools": { "web": { "search": { "enabled": true } } }
+  "tools": {
+    "web": {
+      "search": {
+        "enabled": true
+      }
+    }
+  }
 }
